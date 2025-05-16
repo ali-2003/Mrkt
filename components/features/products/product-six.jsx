@@ -163,7 +163,7 @@ function ProductSix({ product }) {
           </div>
         )}
 
-        {product?.stock && product?.stock !== 0 ? (
+        {/* {product?.stock && product?.stock !== 0 ? (
           <div className="product-action">
             {nicotinePercentage?.length > 0 ? (
               <Link
@@ -180,7 +180,7 @@ function ProductSix({ product }) {
           </div>
         ) : (
           ""
-        )}
+        )} */}
       </figure>
 
       <div className="product-body">

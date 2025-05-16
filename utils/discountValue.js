@@ -1,0 +1,4 @@
+export const FIRST_ORDER_DISCOUNT = 10;
+export const REFER_FRIEND_DISCOUNT_IND = 20;
+export const REFER_FRIEND_DISCOUNT_BUS = 15;
+export const AFFILIATE_DISCOUNT = 10;

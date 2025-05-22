@@ -145,14 +145,14 @@ function ProductEleven({ product }) {
                 <span>add to wishlist</span>
               </a>
             )}
-            <a
+            {/* <a
               href="#"
               className="btn-product-icon btn-quickview"
               title="Quick View"
               onClick={onQuickView}
             >
               <span>quick view</span>
-            </a>
+            </a> */}
           </div>
         )}
 

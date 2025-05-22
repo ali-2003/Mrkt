@@ -189,7 +189,6 @@ function InfoThree({ product }) {
         </Card>}
         {product?.shippingDetails && <Card
           title="Shipping & Returns"
-          expanded={true}
           adClass="card-box card-sm"
         >
           <div className="product-desc-content">
@@ -201,77 +200,82 @@ function InfoThree({ product }) {
         </Card>}
         <Card title={`Ulasan (${product?.reviews?.length || 0})`} adClass="card-box card-sm">
           <div className="reviews">
-            {product?.reviews?.map((review, index) => (
-
-            <div className={`review ${index === product?.reviews?.length-1 ? 'border-0' : ''}`}>
-              <div className="row no-gutters">
-                <div className="col-auto">
-                  <h4>
-                    <Link href="#">{review?.name}</Link>
-                  </h4>
-                  <div className="ratings-container">
-                    <div className="ratings">
-                      <div
-                        className="ratings-val"
-                        style={{ width: review?.stars * 20 + "%" }}
-                      ></div>
-                      <span className="tooltip-text">
-                        {review?.stars?.toFixed(1)}
+            {product?.reviews?.length > 0 ? (
+              product.reviews.map((review, index) => (
+                <div className={`review ${index === product?.reviews?.length-1 ? 'border-0' : ''}`} key={`review-${index}`}>
+                  <div className="row no-gutters">
+                    <div className="col-auto">
+                      <h4>
+                        <Link href="#">{review?.name}</Link>
+                      </h4>
+                      <div className="ratings-container">
+                        <div className="ratings">
+                          <div
+                            className="ratings-val"
+                            style={{ width: review?.stars * 20 + "%" }}
+                          ></div>
+                          <span className="tooltip-text">
+                            {review?.stars?.toFixed(1)}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="review-date mb-1">
+                        {calculateDaysAgo(review?.createdAt)}
                       </span>
                     </div>
-                  </div>
-                  <span className="review-date mb-1">
-                    {calculateDaysAgo(review?.createdAt)}
-                  </span>
-                </div>
-                <div className="col">
-                  <h4>{review.title}</h4>
+                    <div className="col">
+                      <h4>{review.title}</h4>
 
-                  <div className="review-content">
-                    <p>{review.description}</p>
-                  </div>
-                  
-                  {/* Review Images Display */}
-                  {review.reviewImages && review.reviewImages.length > 0 && (
-                    <div className="review-images mt-2">
-                      <div className="row">
-                        {review.reviewImages.map((img, imgIndex) => (
-                          <div className="col-4 col-sm-3 col-lg-2 mb-2" key={`review-img-${index}-${imgIndex}`}>
-                            <div 
-                              className="review-image-container" 
-                              style={{ cursor: 'pointer', position: 'relative', paddingBottom: '100%', overflow: 'hidden', borderRadius: '4px' }}
-                              onClick={() => openImageModal(img?.asset?._ref)}
-                            >
-                              <img 
-                                src={`https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${img?.asset?._ref.replace('image-', '').replace('-jpg', '.jpg').replace('-png', '.png').replace('-webp', '.webp')}`}
-                                alt={`Review ${index+1} image ${imgIndex+1}`}
-                                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                              />
-                            </div>
-                          </div>
-                        ))}
+                      <div className="review-content">
+                        <p>{review.description}</p>
                       </div>
+                      
+                      {/* Review Images Display */}
+                      {review.reviewImages && review.reviewImages.length > 0 && (
+                        <div className="review-images mt-2">
+                          <div className="row">
+                            {review.reviewImages.map((img, imgIndex) => (
+                              <div className="col-4 col-sm-3 col-lg-2 mb-2" key={`review-img-${index}-${imgIndex}`}>
+                                <div 
+                                  className="review-image-container" 
+                                  style={{ cursor: 'pointer', position: 'relative', paddingBottom: '100%', overflow: 'hidden', borderRadius: '4px' }}
+                                  onClick={() => openImageModal(img?.asset?._ref)}
+                                >
+                                  <img 
+                                    src={`https://cdn.sanity.io/images/${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID}/${process.env.NEXT_PUBLIC_SANITY_DATASET}/${img?.asset?._ref.replace('image-', '').replace('-jpg', '.jpg').replace('-png', '.png').replace('-webp', '.webp')}`}
+                                    alt={`Review ${index+1} image ${imgIndex+1}`}
+                                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
-            ))}
+              ))
+            ) : (
+              <p>Belum ada ulasan untuk produk ini.</p>
+            )}
           </div>
-
-          <div className="reply">
+        </Card>
+        
+        {/* New "Tulis Ulasan" tab */}
+        <Card title="Tulis Ulasan" adClass="card-box card-sm">
+          <div className="write-review">
             <div className="title-wrapper text-left">
               <h3 className="title title-simple text-left text-normal">
-                Add a Review
+                Tambahkan Ulasan
               </h3>
               <p>
-                Your email address will not be published. Required fields are
-                marked *
+                Email Anda tidak akan dipublikasikan. Kolom yang wajib diisi ditandai dengan *
               </p>
             </div>
             <div className="rating-form">
               <label htmlFor="rating" className="text-dark">
-                Your rating *{" "}
+                Rating Anda *{" "}
               </label>
               <span className="rating-stars selected">
                 {[1, 2, 3, 4, 5].map((num, index) => (
@@ -293,7 +297,7 @@ function InfoThree({ product }) {
                   className="form-control"
                   id="reply-title"
                   name="reply-title"
-                  placeholder="Title *"
+                  placeholder="Judul *"
                   required
                   value={review.title}
                   onChange={(e) => setReview({...review, title: e.target.value})}
@@ -304,7 +308,7 @@ function InfoThree({ product }) {
                 cols="30"
                 rows="6"
                 className="form-control mb-2"
-                placeholder="Comment *"
+                placeholder="Komentar *"
                 required
                 value={review.comment}
                 onChange={(e) => setReview({...review, comment: e.target.value})}
@@ -316,7 +320,7 @@ function InfoThree({ product }) {
                     className="form-control"
                     id="reply-name"
                     name="reply-name"
-                    placeholder="Name *"
+                    placeholder="Nama *"
                     required
                     value={review.name}
                     onChange={(e) => setReview({...review, name: e.target.value})}
@@ -338,7 +342,7 @@ function InfoThree({ product }) {
               
               {/* Image Upload Section */}
               <div className="form-group mt-3">
-                <label htmlFor="review-images" className="text-dark">Upload Images (Optional)</label>
+                <label htmlFor="review-images" className="text-dark">Upload Gambar (Opsional)</label>
                 <input
                   type="file"
                   className="form-control-file"
@@ -383,7 +387,7 @@ function InfoThree({ product }) {
                 className="btn btn-primary" 
                 disabled={loading}
               >
-                {loading ? 'Submitting...' : 'Submit'}
+                {loading ? 'Submitting...' : 'Kirim Ulasan'}
               </button>
             </form>
           </div>

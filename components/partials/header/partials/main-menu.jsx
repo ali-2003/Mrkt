@@ -34,6 +34,12 @@ function MainMenu() {
           </Link>
 
         </li>
+        <li className={path?.includes("/devices") ? "active" : ""}>
+          <Link href="/devices" className="sf" scroll={false}>
+          Devices
+          </Link>
+
+        </li>
         <li className={path?.includes("/informasi-penting") ? "active" : ""}>
           <Link
             href="/informasi-penting"

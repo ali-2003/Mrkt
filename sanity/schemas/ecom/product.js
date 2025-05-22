@@ -31,6 +31,21 @@ export const product = {
       },
       validation: (Rule) => Rule.required(),
     },
+    // ADD NEW PRODUCT TYPE FIELD HERE
+    {
+      name: "productType",
+      title: "Product Type",
+      type: "string",
+      options: {
+        list: [
+          { title: "Bottle", value: "bottle" },
+          { title: "Pod", value: "pod" },
+          { title: "Accessory", value: "accessory" }
+        ],
+        layout: 'radio'
+      },
+      validation: (Rule) => Rule.required(),
+    },
     {
       name: "short_desc",
       title: "Short Description",
@@ -179,6 +194,7 @@ export const product = {
   preview: {
     select: {
       title: "name",
+      subtitle: "productType",
       media: "pictures.0.img",
     },
   },

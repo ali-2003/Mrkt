@@ -81,123 +81,159 @@ function DetailOne(props) {
     toast.success("Product added to cart");
   }
 
-  // Facebook sharing - simplified to just share product name and URL
+  // Enhanced Facebook sharing for better desktop pre-filling and mobile app opening
   function shareFacebook(e) {
     e.preventDefault();
     
-    // Simplified sharing text - just product name
-    const shareText = `${product.name}`;
+    // Get product data
+    const prodName = product.name;
     const prodUrl = currentUrl;
     
+    // Different approaches for mobile vs desktop
     if (isMobile) {
-      // MOBILE: Try to use Facebook app for story sharing
+      // MOBILE: Try to open the Facebook app directly
       try {
-        const encodedQuote = encodeURIComponent(shareText);
-        const encodedUrl = encodeURIComponent(prodUrl);
+        // First try the Facebook app intent
+        const fbAppUrl = `fb://share?link=${encodeURIComponent(prodUrl)}&text=${encodeURIComponent(prodName)}`;
         
-        // Generate a deep link for Facebook - simpler, no hashtags
-        const fbStoryUrl = `fb://story?quote=${encodedQuote}&link=${encodedUrl}`;
+        // Create an invisible iframe to try opening the app without changing page
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        iframe.src = fbAppUrl;
         
-        // Try to open the Facebook app
-        window.location.href = fbStoryUrl;
+        // Show toast
+        toast.info("Opening Facebook app...");
         
-        // Show guidance to the user
-        toast.info("Opening Facebook...");
-        
-        // Fallback if the app doesn't open after a delay
+        // Set a timer to check if app opened (if the page is still here after delay)
         setTimeout(() => {
-          const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedQuote}`;
-          window.open(fbUrl, '_blank');
-        }, 2500);
+          // Try a different approach - direct location change
+          window.location.href = fbAppUrl;
+          
+          // Fallback to browser if app doesn't open after another delay
+          setTimeout(() => {
+            // If we're still here, try the browser version with intent protocol
+            const intentUrl = `intent://share?text=${encodeURIComponent(prodName)}&url=${encodeURIComponent(prodUrl)}#Intent;package=com.facebook.katana;scheme=fb;end`;
+            window.location.href = intentUrl;
+            
+            // Final fallback to basic browser sharing
+            setTimeout(() => {
+              const fbUrl = `https://www.facebook.com/sharer.php?u=${encodeURIComponent(prodUrl)}&quote=${encodeURIComponent(prodName)}`;
+              window.open(fbUrl, '_blank');
+              toast.info("Opened Facebook in browser instead. The app may not be installed.");
+            }, 1000);
+          }, 1000);
+        }, 1000);
       } catch (error) {
-        console.error("Facebook sharing error:", error);
+        console.error("Facebook app sharing error:", error);
+        
         // Fallback to browser sharing
-        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(prodUrl)}&quote=${encodeURIComponent(shareText)}`;
+        const fbUrl = `https://www.facebook.com/sharer.php?u=${encodeURIComponent(prodUrl)}&quote=${encodeURIComponent(prodName)}`;
         window.open(fbUrl, '_blank');
+        toast.info("Opened Facebook in browser instead.");
       }
     } else {
-      // DESKTOP: Open Facebook's web sharing dialog with pre-filled details - no hashtags
+      // DESKTOP: Try improved sharing with hashtag and quote parameters
       try {
-        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(prodUrl)}&quote=${encodeURIComponent(shareText)}`;
-        window.open(fbUrl, '_blank', 'width=650,height=500');
+        // The most reliable approach for pre-filling text without an app ID
+        // Uses both quote and hashtag parameters which can help with pre-filling
+        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(prodUrl)}&quote=${encodeURIComponent(prodName)}&hashtag=${encodeURIComponent('#' + prodName.replace(/\s+/g, ''))}`;
+        
+        // Open Facebook share dialog in a popup window
+        const width = 626;
+        const height = 436;
+        const left = window.innerWidth / 2 - width / 2;
+        const top = window.innerHeight / 2 - height / 2;
+        
+        window.open(
+          fbUrl, 
+          'facebook-share-dialog', 
+          `width=${width},height=${height},top=${top},left=${left},toolbar=0,location=0,menubar=0,scrollbars=0`
+        );
+        
+        // Also copy to clipboard as backup
+        try {
+          const shareText = `${prodName} ${prodUrl}`;
+          navigator.clipboard.writeText(shareText);
+          toast.success("Product details also copied to clipboard (if needed)");
+        } catch (clipError) {
+          console.error("Clipboard error:", clipError);
+        }
       } catch (error) {
         console.error("Facebook sharing error:", error);
         toast.error("Couldn't open Facebook sharing");
+        
+        // Fallback to copying if failed
+        try {
+          const shareText = `${prodName} ${prodUrl}`;
+          navigator.clipboard.writeText(shareText);
+          toast.info("Link copied to clipboard instead. You can paste it on Facebook.");
+        } catch (clipError) {
+          console.error("Clipboard error:", clipError);
+        }
       }
     }
   }
 
-  // Instagram sharing - simplified to just copy product name and URL to clipboard
-  function shareInstagram(e) {
+  // WhatsApp sharing
+  function shareWhatsApp(e) {
     e.preventDefault();
     
-    // The final URL to share (with UTM parameters for tracking)
-    const prodUrl = currentUrl + "?utm_source=instagram&utm_medium=story&utm_campaign=product_share";
-    const prodName = product.name;
+    // Prepare the text and URL for WhatsApp
+    const shareText = `${product.name}`;
+    const prodUrl = currentUrl;
+    const whatsappText = `${shareText} ${prodUrl}`;
     
-    // Simply copy the product details to clipboard
     try {
-      // Create a text with product name and details - no hashtags
-      const clipText = `${prodName}\n${prodUrl}`;
+      // WhatsApp web API URL
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
       
+      // Open WhatsApp in new tab/app
+      window.open(whatsappUrl, '_blank');
+      
+      toast.info("Opening WhatsApp...");
+    } catch (error) {
+      console.error("WhatsApp sharing error:", error);
+      toast.error("Couldn't open WhatsApp sharing");
+    }
+  }
+
+  // Copy link function
+  function copyLink(e) {
+    e.preventDefault();
+    
+    // The URL to copy
+    const prodUrl = currentUrl;
+    
+    try {
       // Copy to clipboard using navigator API or execCommand fallback
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(clipText)
+        navigator.clipboard.writeText(prodUrl)
           .then(() => {
-            toast.success("Product details copied to clipboard");
-            toast.info("Open Instagram and paste to share");
-            
-            // Open Instagram app on mobile or website on desktop
-            if (isMobile) {
-              window.location.href = "instagram://";
-            } else {
-              window.open('https://instagram.com', '_blank');
-            }
+            toast.success("Product link copied to clipboard");
           })
           .catch(err => {
             console.error("Clipboard error:", err);
-            toast.error("Couldn't copy product details automatically");
-            
-            // Still try to open Instagram
-            if (isMobile) {
-              window.location.href = "instagram://";
-            } else {
-              window.open('https://instagram.com', '_blank');
-            }
+            toast.error("Couldn't copy link automatically");
           });
       } else {
         // Fallback clipboard method
         const textarea = document.createElement('textarea');
-        textarea.value = clipText;
+        textarea.value = prodUrl;
         document.body.appendChild(textarea);
         textarea.select();
         const success = document.execCommand('copy');
         document.body.removeChild(textarea);
         
         if (success) {
-          toast.success("Product details copied to clipboard");
-          toast.info("Open Instagram and paste to share");
+          toast.success("Product link copied to clipboard");
         } else {
-          toast.error("Couldn't copy product details automatically");
-        }
-        
-        // Open Instagram
-        if (isMobile) {
-          window.location.href = "instagram://";
-        } else {
-          window.open('https://instagram.com', '_blank');
+          toast.error("Couldn't copy link automatically");
         }
       }
     } catch (error) {
-      console.error("Instagram sharing error:", error);
-      toast.error("Couldn't prepare Instagram sharing");
-      
-      // Still try to open Instagram as a fallback
-      if (isMobile) {
-        window.location.href = "instagram://";
-      } else {
-        window.open('https://instagram.com', '_blank');
-      }
+      console.error("Copy link error:", error);
+      toast.error("Couldn't copy link");
     }
   }
 
@@ -283,20 +319,30 @@ function DetailOne(props) {
           <a 
             href="#" 
             className="social-icon" 
-            title="Facebook"
+            title="Share on Facebook"
             onClick={shareFacebook}
           >
             <i className="icon-facebook-f"></i>
           </a>
           
-          {/* Instagram sharing - simplified to clipboard copying */}
+          {/* WhatsApp sharing */}
           <a 
             href="#" 
             className="social-icon" 
-            title="Copy for Instagram"
-            onClick={shareInstagram}
+            title="Share on WhatsApp"
+            onClick={shareWhatsApp}
           >
-            <i className="icon-instagram"></i>
+            <i className="icon-whatsapp"></i>
+          </a>
+          
+          {/* Copy link option */}
+          <a 
+            href="#" 
+            className="social-icon" 
+            title="Copy link"
+            onClick={copyLink}
+          >
+            <i className="icon-copy"></i>
           </a>
         </div>
       </div>

@@ -1,142 +1,59 @@
 import { NextResponse } from "next/server";
-import * as SibApiV3Sdk from "@sendinblue/client";
 import { sanityAdminClient } from "@/sanity/lib/client";
-
-const saveInSanity = async (referralEmail, referredEmail, code) => {
-  try {
-    const res = await sanityAdminClient.create({
-      _type: "referral",
-      referralEmail: referralEmail,
-      referredEmail: referredEmail,
-      referralCode: code,
-      referAvailed: false,
-      dateOfReferral: new Date(),
-    });
-    return res;
-  } catch (error) {
-    console.error("Error saving to Sanity:", error);
-    throw new Error("Failed to save referral data");
-  }
-};
+import { generateReferralCode } from "@/utils/discountValue";
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { referralEmail, referredEmail, firstName, lastName, url } = body;
+    const { email } = body;
     
-    // Debug log to see what we're getting
-    console.log("Received referral request:", { referralEmail, referredEmail, firstName, lastName });
-    
-    // Validate required fields
-    if (!referralEmail || !referredEmail || !firstName || !url) {
-      console.log("Missing required fields:", { referralEmail, referredEmail, firstName, url });
+    if (!email) {
       return NextResponse.json(
-        { success: false, message: "Missing required fields" },
+        { success: false, message: "Invalid request: Email is required" },
         { status: 400 }
       );
     }
-
-    // Generate unique code for referral
-    const CODE =
-      Math.random().toString(36).substring(2, 6) +
-      Math.floor(Math.random() * 10);
-
-    // Setup Brevo contacts API
-    let apiInstance = new SibApiV3Sdk.ContactsApi();
     
-    // Check if API key exists
-    if (!process.env.BREVO_API_KEY) {
-      console.error("Missing Brevo API key in environment");
+    // Find the user
+    const user = await sanityAdminClient.fetch(
+      `*[_type == 'user' && email == $email][0]`,
+      { email }
+    );
+    
+    if (!user) {
       return NextResponse.json(
-        { success: false, message: "API configuration error" },
-        { status: 500 }
+        { success: false, message: "User not found" },
+        { status: 404 }
       );
     }
     
-    apiInstance.setApiKey(
-      SibApiV3Sdk.ContactsApiApiKeys.apiKey,
-      process.env.BREVO_API_KEY
-    );
-
-    // Create contact in Brevo (only if it doesn't exist yet)
-    try {
-      let createContact = new SibApiV3Sdk.CreateContact();
-      createContact.email = referredEmail;
-      createContact.attributes = {
-        FIRSTNAME: firstName,
-        LASTNAME: lastName || "",
-      };
-      createContact.listIds = [2];
-      
-      await apiInstance.createContact(createContact);
-      console.log("Contact created or already exists in Brevo");
-    } catch (error) {
-      // If error is that contact already exists, we can continue
-      if (error.status !== 400) {
-        console.error("Error creating contact:", error);
-        return NextResponse.json(
-          { success: false, message: "Failed to create contact" },
-          { status: 500 }
-        );
-      }
-    }
-
-    // Setup email sending
-    var apiInstance2 = new SibApiV3Sdk.TransactionalEmailsApi();
-    apiInstance2.setApiKey(
-      SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey,
-      process.env.BREVO_API_KEY
-    );
-
-    // Create email payload
-    var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-    sendSmtpEmail = {
-      to: [
-        {
-          email: referredEmail,
-        },
-      ],
-      templateId: 1,
-      params: {
-        firstName: firstName,
-        lastName: lastName || "",
-        signin_url: `${url}?code=${CODE}`,
-      },
-    };
-
-    // Send the email
-    try {
-      console.log("Attempting to send email via Brevo...");
-      await apiInstance2.sendTransacEmail(sendSmtpEmail);
-      console.log("Email sent successfully");
-    } catch (error) {
-      console.error("Error sending email:", error);
-      return NextResponse.json(
-        { success: false, message: "Failed to send email" },
-        { status: 500 }
-      );
-    }
-
-    // Save referral data to Sanity
-    try {
-      await saveInSanity(referralEmail, referredEmail, CODE);
-    } catch (error) {
-      console.error("Failed to save to Sanity:", error);
-      // Still return success since email was sent
-      return NextResponse.json({ 
-        success: true, 
-        message: "Email sent but failed to save referral data",
+    // Check if user already has a referral code
+    if (user.referralCode) {
+      return NextResponse.json({
+        success: true,
+        message: "User already has a referral code",
+        referralCode: user.referralCode
       });
     }
-
-    return NextResponse.json({ 
-      success: true, 
-      message: "Email sent successfully" 
+    
+    // Generate a unique referral code
+    const referralCode = generateReferralCode();
+    
+    // Update the user with the new referral code
+    await sanityAdminClient
+      .patch(user._id)
+      .set({ referralCode })
+      .commit();
+    
+    return NextResponse.json({
+      success: true,
+      message: "Referral code generated successfully",
+      referralCode
     });
-  } catch (e) {
-    console.error("Unexpected error in referral API:", e);
+  } catch (error) {
+    console.error("Error generating referral code:", error);
     return NextResponse.json(
-      { success: false, message: "An unexpected error occurred" },
+      { success: false, message: "An error occurred while generating referral code" },
       { status: 500 }
     );
   }

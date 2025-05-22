@@ -95,7 +95,7 @@ function Layout({ children, hideQuick, hideVideo }) {
 
       <AgeConfirmModal />
       <QuickViewModal />
-      <PrivacyModal />
+      {/* <PrivacyModal /> */}
 
       <VideoModal />
     </SessionProvider>

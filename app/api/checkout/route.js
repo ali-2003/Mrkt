@@ -1,104 +1,157 @@
-import { sanityAdminClient } from "@/sanity/lib/client.js";
-import { getRandomId } from "@/utils/idGenerator.js";
 import { NextResponse } from "next/server";
-
-const authToken = Buffer.from(`${process.env.XENDIT_CHECKOUT_API_KEY}:`).toString('base64');
-
-const uploadToSanity = async (data, discount) => {
-    const response = await sanityAdminClient.create({
-        _type: 'order',
-        orderId: data.external_id,
-        userId: data?.user_id,
-        paid: false,
-        subTotal: data.items.reduce((acc, item) => acc + (item.price * item?.quantity), 0),
-        totalPrice: data.amount,
-        products: data.items.map(item => {
-            return {
-                _key: getRandomId(),
-                name: item.name,
-                price: item.price,
-                quantity: `${item.quantity}`,
-            }
-        }),
-        name: data.customer?.given_names,
-        email: data.customer?.email,
-        contact: data.customer?.mobile_number,
-        discount: discount ? {
-            name: discount.name,
-            code: discount.code,
-            percentage: discount.percentage,
-            type: discount?.type || 'first',
-            email: discount?.email,
-        } : {}
-    })
-
-    console.log(response)
-}
+import { sanityAdminClient } from "@/sanity/lib/client";
+import { calculateCartTotal } from "@/utils/discountValue";
 
 export async function POST(request) {
-    try {
-        const body = await request.json();
-        
-        const { user, discount, shippingCost } = body
-        const items = body?.items?.map(item => {
-            return {
-                name: item.name,
-                quantity: item?.qty || 1,
-                price: item.price,
-                category: 'Vape Flavor'
-            }
-        });
-
-        const amount = items.reduce((acc, item) => acc + (item.price * item.quantity), 0) + shippingCost
-        const discountAmount = discount ? amount * ((100-discount?.percentage) / 100) : amount
-
-        const ID = `${user?.id}-${new Date().getTime()}`
-
-        const response = await fetch('https://api.xendit.co/v2/invoices', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${authToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              external_id: ID,
-              amount: discountAmount,
-              currency: 'IDR',
-              customer: {
-                given_names: `${user?.name || ''}`,
-                surname: user.type,
-                email: `${user?.email || ''}`,
-                mobile_number: `${user?.whatsapp || ''}`,
-              },
-              customer_notification_preference: {
-                invoice_paid: ['email', 'whatsapp'],
-              },
-              success_redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}success?sessionId=${ID}`,
-              failure_redirect_url: `${process.env.NEXT_PUBLIC_SITE_URL}failure?sessionId=${ID}`,
-              items,
-            //   fees: [
-            //     {
-            //       type: 'Shipping',
-            //       value: 10000,
-            //     },
-            //   ],
-            }),
-          });
-          
-        const data = await response.json();
-        
-        const { invoice_url } = data;
-
-        await uploadToSanity(data, discount)
-
-        console.log("Request successful", ID, data)
-
-        return NextResponse.json({
-            invoice_url,
-        });
-
-    } catch (error) {
-        console.log("Request failed", error)
-        return NextResponse.error(error);
+  try {
+    const body = await request.json();
+    const { items, shippingCost, discount, discountCalculation, user } = body;
+    
+    if (!items || !user) {
+      return NextResponse.json(
+        { success: false, message: "Invalid request data" },
+        { status: 400 }
+      );
     }
+    
+    // Fetch user data from Sanity to get complete profile
+    const userData = await sanityAdminClient.fetch(
+      `*[_type == 'user' && email == $email][0]{
+        ...,
+        "orderCount": count(*[_type == 'order' && customerEmail == $email]),
+        
+      }`,
+      { email: user.email }
+    );
+    
+    // Use provided calculation if available, otherwise recalculate
+    let cartCalculation = discountCalculation;
+    if (!cartCalculation) {
+      try {
+        // Validate items before calculating
+        const validItems = items.map(item => ({
+          ...item,
+          qty: item.qty || 1,
+          sum: typeof item.sum === 'number' ? item.sum : (item.sale_price || item.price || 0) * (item.qty || 1),
+          productType: item.productType || 'bottle'
+        }));
+        
+        cartCalculation = calculateCartTotal(validItems, userData || {}, discount);
+      } catch (error) {
+        console.error("Error calculating cart total:", error);
+        
+        // Fallback calculation if there's an error
+        const subtotal = items.reduce((total, item) => {
+          if (item && typeof item.sum === 'number') {
+            return total + item.sum;
+          }
+          const price = item.sale_price || item.price || 0;
+          const qty = item.qty || 1;
+          return total + (price * qty);
+        }, 0);
+        
+        cartCalculation = {
+          original: subtotal,
+          discount: 0,
+          total: subtotal,
+          discountDetails: null
+        };
+      }
+    }
+    
+    // If this is a first order with discount, or a referral was used,
+    // update the user's discount record
+    if (userData && ((userData.orderCount === 0 || discount?.type === 'referral') && discount)) {
+      // Remove the used discount from available discounts
+      try {
+        const updatedDiscounts = (userData.discountsAvailable || []).filter(
+          d => d.code !== discount.code
+        );
+        
+        await sanityAdminClient
+          .patch(userData._id)
+          .set({ discountsAvailable: updatedDiscounts })
+          .commit();
+      } catch (err) {
+        console.error("Error updating user discounts:", err);
+        // Continue with checkout even if discount update fails
+      }
+    }
+    
+    // Track if a referral was used
+    if (discount?.type === 'referral') {
+      try {
+        // Find and update the referral record
+        const referral = await sanityAdminClient.fetch(
+          `*[_type == 'referral' && referralCode == $code && referredEmail == $email][0]`,
+          { code: discount.code, email: user.email }
+        );
+        
+        if (referral) {
+          await sanityAdminClient
+            .patch(referral._id)
+            .set({ referAvailed: true })
+            .commit();
+        }
+      } catch (err) {
+        console.error("Error updating referral:", err);
+        // Continue with checkout even if referral update fails
+      }
+    }
+    
+    // Create the order with discount information
+    const orderData = {
+      _type: "order",
+      customerEmail: user.email,
+      customerName: user.name,
+      items: items,
+      subtotal: cartCalculation.original,
+      discountAmount: cartCalculation.discount,
+      discountDetails: cartCalculation.discountDetails
+        ? {
+            name: cartCalculation.discountDetails.name,
+            percentage: cartCalculation.discountDetails.percentage,
+            amount: cartCalculation.discountDetails.amount,
+            message: cartCalculation.discountDetails.message
+          }
+        : null,
+      shippingCost: shippingCost,
+      total: cartCalculation.total + shippingCost,
+      status: "pending",
+      dateCreated: new Date()
+    };
+    
+    // Save order to Sanity
+    const orderResult = await sanityAdminClient.create(orderData);
+    
+    // Generate invoice URL
+    const invoice_url = `/invoice/${orderResult._id}`;
+    
+    // After successful order, update user's lifetime spend
+    if (userData && userData._id) {
+      try {
+        await sanityAdminClient
+          .patch(userData._id)
+          .set({
+            lifetimeSpend: (userData.lifetimeSpend || 0) + cartCalculation.total
+          })
+          .commit();
+      } catch (err) {
+        console.error("Error updating user lifetime spend:", err);
+        // Continue with successful checkout even if this update fails
+      }
+    }
+    
+    return NextResponse.json({
+      success: true,
+      order_id: orderResult._id,
+      invoice_url
+    });
+  } catch (error) {
+    console.error("Error processing checkout:", error);
+    return NextResponse.json(
+      { success: false, message: error.message || "An error occurred during checkout" },
+      { status: 500 }
+    );
+  }
 }

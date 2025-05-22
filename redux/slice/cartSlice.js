@@ -1,8 +1,6 @@
-"use client";
-
-import { getRandomId } from "@/utils/idGenerator";
 import { createSlice } from "@reduxjs/toolkit";
 import { toast } from "react-toastify";
+import { getRandomId } from "@/utils/idGenerator"; 
 
 const initialState = {
   items: [],
@@ -15,16 +13,37 @@ export const cartSlice = createSlice({
   initialState,
   reducers: {
     addToCart: (state, action) => {
-      const idx = state.items.findIndex((item) => item.id === action.payload.id);
-      const { description, name, pictures, stock, slug, short_desc } = action.payload;
-
-      if (idx === -1) {
+      const product = action.payload;
+      const existingIndex = state.items.findIndex(
+        (item) => item.id === product.id && item.productType === product.productType
+      );
+      
+      // Extract necessary product information
+      const {
+        id,
+        description,
+        name,
+        pictures,
+        stock,
+        slug,
+        short_desc,
+        price,
+        sale_price,
+        business_price,
+        productType = 'bottle' // Default to bottle if not specified
+      } = product;
+      
+      if (existingIndex === -1) {
+        // Add new item to cart
         state.items.push({
+          id,
           qty: 1,
-          price: action.payload?.sale_price ?? action.payload.price,
+          price,
+          sale_price,
+          business_price,
           cartId: getRandomId(),
-          discountApplied: false,
-          sum: action.payload?.sale_price ?? action.payload.price,
+          productType,
+          sum: sale_price || price,
           description,
           name,
           pictures,
@@ -33,48 +52,61 @@ export const cartSlice = createSlice({
           short_desc,
         });
       } else {
-        state.items[idx].qty += 1;
-        state.items[idx].sum += action.payload?.sale_price ?? action.payload.price;
+        // Update existing item quantity
+        state.items[existingIndex].qty += 1;
+        state.items[existingIndex].sum =
+          state.items[existingIndex].qty * (sale_price || price);
       }
+      
+      toast.success("Product added to cart");
     },
+    
     removeFromCart: (state, action) => {
       state.items = state.items.filter((item) => item.cartId !== action.payload);
+      toast.success("Product removed from cart");
     },
+    
+    updateItemQuantity: (state, action) => {
+      const { cartId, qty } = action.payload;
+      const itemIndex = state.items.findIndex((item) => item.cartId === cartId);
+      
+      if (itemIndex !== -1) {
+        state.items[itemIndex].qty = qty;
+        state.items[itemIndex].sum =
+          qty * (state.items[itemIndex].sale_price || state.items[itemIndex].price);
+      }
+    },
+    
     emptyCart: (state) => {
       state.items = [];
       state.shippingCost = 0;
+      state.discount = null;
     },
-    updateCart: (state, action) => {
-      const idx = state.items.findIndex(
-        (item) => item.id === action.payload.id
-      );
-      state.items[idx].qty = action.payload.qty;
-      state.items[idx].sum =
-        action.payload.qty * state.items[idx]?.sale_price ||
-        state.items[idx]?.price;
-    },
+    
     addShippingCost: (state, action) => {
       state.shippingCost = action.payload;
     },
-    updateDiscount: (state, action) => {
-      state.discount = action.payload;
-    },
+    
     applyDiscount: (state, action) => {
-      state.cart.discount = action.payload;
-
-      toast.success("Discount applied!");
+      state.discount = action.payload;
+      toast.success("Discount applied successfully!");
     },
+    
+    removeDiscount: (state) => {
+      state.discount = null;
+      toast.info("Discount removed");
+    }
   },
 });
 
 export const {
   addToCart,
   removeFromCart,
+  updateItemQuantity,
   emptyCart,
-  updateCart,
   addShippingCost,
-  updateDiscount,
   applyDiscount,
+  removeDiscount
 } = cartSlice.actions;
 
 export default cartSlice.reducer;

@@ -354,9 +354,9 @@ function HomePageComponent({
                   <div className="card signup-card h-100">
                     <div className="card-body text-center p-5">
                       <div className="icon-box mb-4">
-                        <i className="icon-user-circle" style={{ fontSize: '3rem' }}></i>
+                        <i className="icon-user-circle" style={{ fontSize: '4rem' }}></i>
                       </div>
-                      <h3 className="card-title font-weight-normal text-primary mb-3">
+                      <h3 className="card-title  font-extrabold text-primary mb-3">
                         Akun Pribadi
                       </h3>
                       <p className="card-text mb-4">
@@ -381,7 +381,7 @@ function HomePageComponent({
                       <div className="icon-box mb-4">
                         <i className="icon-briefcase" style={{ fontSize: '3rem' }}></i>
                       </div>
-                      <h3 className="card-title font-weight-normal text-primary mb-3">
+                      <h3 className="card-title font-extrabold text-primary mb-3">
                         Akun Bisnis
                       </h3>
                       <p className="card-text mb-4">

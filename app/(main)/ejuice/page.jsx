@@ -8,7 +8,7 @@ export const metadata = {
 
 const fetchData = async () => {
   try {
-    const res = await client.fetch(`*[_type == 'product'] {
+    const res = await client.fetch(`*[_type == 'product' && productType == 'bottle'] {
       ...,
       relatedProducts[]->,
     }`)

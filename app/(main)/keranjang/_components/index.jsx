@@ -31,6 +31,34 @@ function CartPageComponent() {
   const cart = useSelector((state) => state.cart);
   const { items, discount } = cart;
 
+  // Enhanced function to get the correct cart image
+  const getCartImage = (item) => {
+    // Priority: cartImage > selectedColor first image > regular pictures
+    if (item.cartImage) {
+      return urlFor(item.cartImage).url();
+    } else if (item.selectedColor?.pictures && item.selectedColor.pictures[0]) {
+      return urlFor(item.selectedColor.pictures[0]).url();
+    } else if (item.pictures && item.pictures.length > 0) {
+      return urlFor(item.pictures[0]).url();
+    }
+    return '/placeholder-image.jpg'; // Fallback
+  };
+
+  // Enhanced function to get display name with color
+  const getDisplayName = (item) => {
+    if (item.displayName) {
+      return item.displayName;
+    } else if (item.selectedColor) {
+      return `${item.name} - ${item.selectedColor.colorName}`;
+    }
+    return item.name;
+  };
+
+  // Get base product name without color
+  const getBaseProductName = (item) => {
+    return item.originalProduct?.name || item.name;
+  };
+
   // Function to get user data
   const getUserData = async () => {
     if (!session?.user?.email) return null;
@@ -120,7 +148,8 @@ function CartPageComponent() {
         name: item.name,
         productType: item.productType,
         qty: item.qty,
-        sum: item.sum
+        sum: item.sum,
+        selectedColor: item.selectedColor?.colorName
       })));
       
       // If there's a manual discount, apply it
@@ -548,22 +577,70 @@ function CartPageComponent() {
                                   className="product-image"
                                 >
                                   <img
-                                    src={urlFor(item.pictures?.[0]).url()}
-                                    alt={item.name}
+                                    src={getCartImage(item)}
+                                    alt={getDisplayName(item)}
+                                    style={{ width: '80px', height: '80px', objectFit: 'cover' }}
                                   />
                                 </Link>
                               </figure>
 
-                              <h4 className="product-title">
-                                <Link href={`/produk/${item.slug.current}`}>
-                                  {item.name}
-                                </Link>
-                                {item.productType && (
-                                  <span className="ml-2 text-sm text-neutral-500">
-                                    ({item.productType})
-                                  </span>
+                              <div className="product-details">
+                                <h4 className="product-title">
+                                  <Link href={`/produk/${item.slug.current}`}>
+                                    {getBaseProductName(item)}
+                                  </Link>
+                                  {item.productType && (
+                                    <span className="ml-2 text-sm text-neutral-500">
+                                      ({item.productType})
+                                    </span>
+                                  )}
+                                </h4>
+                                
+                                {/* Color information display */}
+                                {item.selectedColor && (
+                                  <div className="product-color-info" style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    marginTop: '6px',
+                                    gap: '8px'
+                                  }}>
+                                    <div 
+                                      className="color-indicator"
+                                      style={{
+                                        width: '16px',
+                                        height: '16px',
+                                        backgroundColor: item.selectedColor.colorCode,
+                                        borderRadius: '50%',
+                                        border: '2px solid #fff',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                                        flexShrink: 0
+                                      }}
+                                    ></div>
+                                    <span style={{
+                                      fontSize: '13px',
+                                      color: '#666',
+                                      fontWeight: '500',
+                                      textTransform: 'capitalize'
+                                    }}>
+                                      Color: {item.selectedColor.colorName}
+                                    </span>
+                                  </div>
                                 )}
-                              </h4>
+
+                                {/* Stock info for colored products */}
+                                {item.selectedColor?.stock && (
+                                  <div className="stock-info" style={{
+                                    fontSize: '12px',
+                                    color: item.selectedColor.stock < 5 ? '#e74c3c' : '#27ae60',
+                                    marginTop: '4px'
+                                  }}>
+                                    {item.selectedColor.stock < 5 ? 
+                                      `Only ${item.selectedColor.stock} left in ${item.selectedColor.colorName}` : 
+                                      `${item.selectedColor.stock} available in ${item.selectedColor.colorName}`
+                                    }
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
 
@@ -576,6 +653,7 @@ function CartPageComponent() {
                               value={item.qty}
                               changeQty={(current) => changeQty(current, index)}
                               adClass="cart-product-quantity"
+                              max={item.selectedColor?.stock || item.stock || 999}
                             />
                           </td>
 
@@ -690,75 +768,6 @@ function CartPageComponent() {
                             Rp {formatPrice(getAfterDiscountTotal())}
                           </td>
                         </tr>
-                        
-                        {/* <tr className="summary-shipping">
-                          <td>Shipping:</td>
-                          <td>&nbsp;</td>
-                        </tr>
-
-                        <tr className="summary-shipping-row">
-                          <td>
-                            <div className="custom-control custom-radio">
-                              <input
-                                type="radio"
-                                id="free-shipping"
-                                name="shipping"
-                                className="custom-control-input"
-                                onChange={(e) => onChangeShipping(0)}
-                                defaultChecked={true}
-                              />
-                              <label
-                                className="custom-control-label"
-                                htmlFor="free-shipping"
-                              >
-                                Free Shipping
-                              </label>
-                            </div>
-                          </td>
-                          <td>Rp 0.000</td>
-                        </tr>
-
-                        <tr className="summary-shipping-row">
-                          <td>
-                            <div className="custom-control custom-radio">
-                              <input
-                                type="radio"
-                                id="standard-shipping"
-                                name="shipping"
-                                className="custom-control-input"
-                                onChange={(e) => onChangeShipping(10000)}
-                              />
-                              <label
-                                className="custom-control-label"
-                                htmlFor="standard-shipping"
-                              >
-                                Standard:
-                              </label>
-                            </div>
-                          </td>
-                          <td>Rp 10.000</td>
-                        </tr>
-
-                        <tr className="summary-shipping-row">
-                          <td>
-                            <div className="custom-control custom-radio">
-                              <input
-                                type="radio"
-                                id="express-shipping"
-                                name="shipping"
-                                className="custom-control-input"
-                                onChange={(e) => onChangeShipping(20000)}
-                              />
-                              <label
-                                className="custom-control-label"
-                                htmlFor="express-shipping"
-                              >
-                                Express:
-                              </label>
-                            </div>
-                          </td>
-                          <td>Rp 20.000</td>
-                        </tr> */}
 
                         <tr className="summary-total">
                           <td>Total:</td>

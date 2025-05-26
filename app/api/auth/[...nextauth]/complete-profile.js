@@ -1,77 +1,134 @@
-// Save this file as /app/api/auth/complete-profile/route.js
-import { sanityAdminClient } from "@/sanity/lib/client";
-import { FIRST_ORDER_DISCOUNT } from "@/utils/discountValue.js";
+// app/api/complete-profile/route.js
+
+import { sanityAdminClient } from "@/sanity/lib/client"
+import { AFFILIATE_DISCOUNT, FIRST_ORDER_DISCOUNT, REFER_FRIEND_DISCOUNT_IND } from "@/utils/discountValue.js"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/app/api/auth/[...nextauth]/route" // Updated path for App Router
 
 export async function POST(request) {
     try {
-        const body = await request.json();
-        const { 
-            email, 
-            name, 
-            whatsapp, 
-            dob, 
-            authType
-        } = body;
-
-        // Check if user already exists
-        const existingUser = await sanityAdminClient.fetch(`*[_type == 'user' && email == $email][0]`, { email });
-
-        if (existingUser) {
+        const session = await getServerSession(authOptions)
+        
+        if (!session) {
             return Response.json({
                 status: "error",
-                message: 'An account already exists with this email.'
-            }, { status: 400 });
+                message: "Unauthorized"
+            }, { status: 401 })
         }
 
-        // Create a new user in Sanity
-        const registeredUser = await sanityAdminClient.create({
-            _type: 'user',
-            name,
-            email,
-            password: '', // No password for Google auth users
-            authType: authType || 'google', // Default to 'google' if not specified
-            createdAt: new Date().toISOString(),
-            accountType: 'user', // Google auth only for personal accounts
-            approved: true,
+        const body = await request.json()
+        const { userId, whatsapp, dob, code } = body
+
+        // Verify user exists and profile is incomplete
+        const user = await sanityAdminClient.fetch(
+            `*[_type == 'user' && _id == $userId && profileCompleted == false][0]`,
+            { userId }
+        )
+
+        if (!user) {
+            return Response.json({
+                status: "error",
+                message: "Invalid user or profile already completed"
+            }, { status: 400 })
+        }
+
+        // Handle referral code logic
+        let discountValid = false
+        let discount = null
+        let referalUserEmail
+        let referalUser
+
+        if (code) {
+            discount = await sanityAdminClient.fetch(
+                `*[_type == 'referral' && referredEmail == $email && referralCode == $code && referAvailed == false]`, 
+                { email: user.email, code }
+            )
+            
+            if (discount?.length) {
+                referalUserEmail = discount[0].referralEmail
+                referalUser = await sanityAdminClient.fetch(
+                    `*[_type == 'user' && email == $referalUserEmail]{..., discountAvailable}[0]`, 
+                    { referalUserEmail }
+                )
+                
+                if (user.accountType === referalUser?.accountType) {
+                    discountValid = true
+                }
+            }
+        }
+
+        // Validate age
+        const today = new Date()
+        const dobDate = new Date(dob)
+        if (today.getFullYear() - dobDate.getFullYear() < 18) {
+            return Response.json({
+                status: "error",
+                message: "You must be at least 18 years old"
+            }, { status: 400 })
+        }
+
+        // Update user profile
+        const updatedUser = await sanityAdminClient.patch(userId).set({
             whatsapp,
             dob,
             balance: 0,
-            discountsAvailable: [{
-                _key: Math.random().toString(36).substring(7),
-                name: "First Order Discount",
-                type: 'first',
-                percentage: FIRST_ORDER_DISCOUNT,
-            }]
-        });
+            profileCompleted: true,
+            discountsAvailable: discountValid ? 
+                [{
+                    _key: Math.random().toString(36).substring(7),
+                    name: "Refer Friend Discount",
+                    code: code,
+                    type: 'refer',
+                    percentage: REFER_FRIEND_DISCOUNT_IND,
+                }] :
+                [{
+                    _key: Math.random().toString(36).substring(7),
+                    name: "First Order Discount",
+                    code: code || 'FIRST',
+                    type: 'first',
+                    percentage: FIRST_ORDER_DISCOUNT,
+                }]
+        }).commit()
 
-        // Create an affiliate discount for this user
-        const discount = await sanityAdminClient.create({
+        // Create affiliate discount code
+        await sanityAdminClient.create({
             _type: 'discount',
-            name: `Affiliate Discount Code for ${email}`,
-            email,
-            code: Array.from({length: Math.floor(Math.random() * 2) + 5}, () => 
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".charAt(Math.floor(Math.random() * 36))
-            ).join(''),
+            name: `Affiliate Discount Code for ${user.email}`,
+            email: user.email,
+            code: Array.from({length: Math.floor(Math.random() * 2) + 5}, 
+                () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".charAt(Math.floor(Math.random() * 36))).join(''),
             type: 'affiliate',
-            percentage: 5 // Adjust based on your discount strategy
-        });
+            percentage: AFFILIATE_DISCOUNT
+        })
+
+        // Handle referral reward
+        if (discountValid && referalUser) {
+            await sanityAdminClient.patch(referalUser._id).set({ 
+                discountsAvailable: [
+                    ...(referalUser.discountsAvailable || []),
+                    {
+                        _key: Math.random().toString(36).substring(7),
+                        name: "Refer Friend Discount",
+                        code: code,
+                        type: 'refer',
+                        percentage: REFER_FRIEND_DISCOUNT_IND,
+                    }
+                ] 
+            }).commit()
+
+            await sanityAdminClient.patch(discount[0]._id).set({ referAvailed: true }).commit()
+        }
 
         return Response.json({
             status: "success",
-            message: "User profile completed successfully",
-            user: {
-                id: registeredUser._id,
-                name,
-                email,
-                accountType: 'user'
-            }
-        }, { status: 200 });
+            message: "Profile completed successfully"
+        }, { status: 200 })
 
-    } catch (err) {
-        console.error(err);
+    } catch (error) {
+        console.error("Complete profile error:", error)
         return Response.json({
             status: "error",
-            message: "Error completing profile."
-        }, { status: 500 });
+            message: "Error completing profile"
+        }, { status: 500 })
     }
 }

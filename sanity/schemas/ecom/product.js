@@ -114,6 +114,81 @@ export const product = {
       of: [{ type: "image" }],
       validation: (Rule) =>
         Rule.min(1).error("At least one picture must be added"),
+      hidden: ({ document }) => document?.productType === 'pod', // Hide for pods since they use color-specific images
+    },
+    // NEW: Pod Colors Configuration
+    {
+      name: "podColors",
+      title: "Pod Colors",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          title: "Color Variant",
+          fields: [
+            {
+              name: "colorName",
+              title: "Color Name",
+              type: "string",
+              validation: (Rule) => Rule.required(),
+            },
+            {
+              name: "colorCode",
+              title: "Color Code",
+              type: "string",
+              description: "Hex color code (e.g., #FF5733)",
+              validation: (Rule) => Rule.required().regex(/^#[0-9A-Fa-f]{6}$/, {
+                name: "hex color",
+                invert: false
+              }),
+            },
+            {
+              name: "stock",
+              title: "Stock for this color",
+              type: "number",
+              validation: (Rule) => Rule.required().min(0),
+            },
+            {
+              name: "pictures",
+              title: "Pictures for this color",
+              type: "array",
+              of: [{ type: "image" }],
+              validation: (Rule) =>
+                Rule.min(1).error("At least one picture must be added for each color"),
+            },
+            {
+              name: "isAvailable",
+              title: "Is Available",
+              type: "boolean",
+              initialValue: true,
+            },
+          ],
+          preview: {
+            select: {
+              title: "colorName",
+              subtitle: "stock",
+              media: "pictures.0",
+            },
+            prepare({ title, subtitle, media }) {
+              return {
+                title: title || "Unnamed Color",
+                subtitle: `Stock: ${subtitle || 0}`,
+                media: media,
+              };
+            },
+          },
+        },
+      ],
+      hidden: ({ document }) => document?.productType !== 'pod', // Only show for pod products
+      validation: (Rule) => 
+        Rule.custom((podColors, context) => {
+          if (context.document?.productType === 'pod') {
+            if (!podColors || podColors.length === 0) {
+              return 'Pod products must have at least one color variant';
+            }
+          }
+          return true;
+        }),
     },
     {
       name: "description",
@@ -196,6 +271,19 @@ export const product = {
       title: "name",
       subtitle: "productType",
       media: "pictures.0.img",
+      podColors: "podColors",
+    },
+    prepare({ title, subtitle, media, podColors }) {
+      // For pod products, use the first color's first image as preview
+      const previewMedia = subtitle === 'pod' && podColors?.[0]?.pictures?.[0] 
+        ? podColors[0].pictures[0] 
+        : media;
+      
+      return {
+        title: title || "Unnamed Product",
+        subtitle: subtitle || "Unknown Type",
+        media: previewMedia,
+      };
     },
   },
 };

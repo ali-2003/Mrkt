@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 
 const initialState = {
   name: "",
@@ -19,9 +19,25 @@ const IndividualSignUpComponent = ({ type }) => {
   const [formData, setFormData] = useState(initialState);
   const [formErrors, setFormErrors] = useState(initialState);
   const [loading, setLoading] = useState(false);
+  const [isGoogleFlow, setIsGoogleFlow] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
+
+  // Handle Google OAuth callback
+  useEffect(() => {
+    if (status === "authenticated" && session?.user && !session?.user?.profileCompleted) {
+      // User signed in with Google but profile incomplete
+      setIsGoogleFlow(true);
+      setFormData(prev => ({
+        ...prev,
+        name: session.user.name || "",
+        email: session.user.email || "",
+      }));
+      toast.info("Please complete your profile to continue");
+    }
+  }, [session, status]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -42,38 +58,38 @@ const IndividualSignUpComponent = ({ type }) => {
     setFormErrors({});
   };
 
-  const validateForm = (formData, type='credentials') => {
+  const validateForm = (formData, type = 'credentials') => {
     const errors = {};
     
-    if (type==='credentials' && !formData.name.trim()) {
+    if (type === 'credentials' && !formData.name.trim()) {
       errors.name = "Please enter your full name";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && !formData.email.trim()) {
+    if (type === 'credentials' && !formData.email.trim()) {
       errors.email = "Please enter your email address";
       setFormErrors(errors);
       return false;
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
       errors.email = "Please enter a valid email address";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && formData.password?.trim()?.length < 6) {
+    if (type === 'credentials' && formData.password?.trim()?.length < 6) {
       errors.password = "Kata sandi harus mengandung enam karakter";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && !formData.confirmPassword?.trim()) {
+    if (type === 'credentials' && !formData.confirmPassword?.trim()) {
       errors.confirmPassword = "Please re-enter your password";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && formData.confirmPassword != formData.password) {
+    if (type === 'credentials' && formData.confirmPassword != formData.password) {
       errors.confirmPassword = "Passwords do not match";
       setFormErrors(errors);
       return false;
@@ -92,7 +108,7 @@ const IndividualSignUpComponent = ({ type }) => {
     }
 
     if (!formData.dob) {
-      errors.whatsapp = "Please enter your Date of birth";
+      errors.dob = "Please enter your Date of birth";
       setFormErrors(errors);
       return false;
     }
@@ -105,40 +121,61 @@ const IndividualSignUpComponent = ({ type }) => {
       return false;
     }
 
-    return true
-  }
+    return true;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!validateForm(formData, 'google')) return;
+    const validationType = isGoogleFlow ? 'google' : 'credentials';
+    if (!validateForm(formData, validationType)) return;
 
     setLoading(true);
 
     try {
       const code = searchParams.get("code");
-      const res = await fetch('/api/sign-up', {
+      
+      let endpoint = '/api/sign-up';
+      let payload = {
+        ...formData,
+        accountType: 'user',
+        code,
+      };
+
+      // If it's Google flow, use complete-profile endpoint
+      if (isGoogleFlow && session?.user?.id) {
+        endpoint = '/api/complete-profile';
+        payload = {
+          userId: session.user.id,
+          whatsapp: formData.whatsapp,
+          dob: formData.dob,
+          code,
+        };
+      }
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...formData,
-          accountType: 'user',
-          code,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
       if (data.status !== 'success') {
         toast.error(data.message || 'Error Registering. Try again');
-        return
+        return;
       }
 
-      toast.success("User Registered! Login to continue.");
-      setFormData(initialState);
-      router.push("/auth/masuk");
+      if (isGoogleFlow) {
+        toast.success("Profile completed successfully!");
+        router.push("/dashboard");
+      } else {
+        toast.success("User Registered! Login to continue.");
+        setFormData(initialState);
+        router.push("/auth/masuk");
+      }
 
     } catch (error) {
       console.error("Signup error:", error);
@@ -151,103 +188,129 @@ const IndividualSignUpComponent = ({ type }) => {
   const handleGoogleSignin = async () => {
     setLoading(true);
 
-    if (!validateForm(formData, 'google')) return;
-
     try {
       const code = searchParams.get("code");
+      
+      // Store form data in sessionStorage only if user has filled some data
+      if (formData.whatsapp || formData.dob) {
+        sessionStorage.setItem('pendingProfileData', JSON.stringify({
+          whatsapp: formData.whatsapp,
+          dob: formData.dob,
+          code: code
+        }));
+      }
 
-      // if (code) {
-      //   const res2 = await fetch("/api/addDiscount", {
-      //     method: "POST",
-      //     headers: {
-      //       "Content-Type": "application/json",
-      //     },
-      //     body: JSON.stringify({
-      //       email: formData.email,
-      //       code,
-      //     }),
-      //   });
-      // }
-      // const res = await signIn("google", {
-        // callbackUrl: "/",
-        // });
-        return
-        await signIn("google")
+      // Don't specify callbackUrl to avoid redirect issues
+      const result = await signIn("google");
+      
+      if (result?.error) {
+        toast.error("Error signing in with Google");
+        setLoading(false);
+      }
 
     } catch (error) {
       console.error("Google Signin error:", error);
       toast.error("Error signing in with Google");
-    } finally {
       setLoading(false);
     }
-  }
+  };
+
+  // Restore form data after Google OAuth
+  useEffect(() => {
+    if (isGoogleFlow) {
+      const pendingData = sessionStorage.getItem('pendingProfileData');
+      if (pendingData) {
+        const data = JSON.parse(pendingData);
+        setFormData(prev => ({
+          ...prev,
+          whatsapp: data.whatsapp || "",
+          dob: data.dob || "",
+        }));
+        sessionStorage.removeItem('pendingProfileData');
+      }
+    }
+  }, [isGoogleFlow]);
 
   return (
     <div>
-      <h3 className="text-center py-2">Registrasi Personal</h3>
+      <h3 className="text-center py-2">
+        {isGoogleFlow ? "Complete Your Profile" : "Registrasi Personal"}
+      </h3>
       <form action="#" className="mt-1">
-          <div className="form-group">
-            <label htmlFor="register-name-2">Nama lengkap *</label>
-            <input
-              type="text"
-              className="form-control"
-              id="register-name-2"
-              value={formData.name}
-              onChange={handleChange}
-              name="name"
-            />
-            {formErrors?.name && (
-              <span className="text-red-600">*{formErrors.name}</span>
-            )}
+        {!isGoogleFlow && (
+          <>
+            <div className="form-group">
+              <label htmlFor="register-name-2">Nama lengkap *</label>
+              <input
+                type="text"
+                className="form-control"
+                id="register-name-2"
+                value={formData.name}
+                onChange={handleChange}
+                name="name"
+              />
+              {formErrors?.name && (
+                <span className="text-red-600">*{formErrors.name}</span>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="register-email-2">Alamat email *</label>
+              <input
+                type="email"
+                className="form-control"
+                id="register-email-2"
+                value={formData.email}
+                onChange={handleChange}
+                name="email"
+              />
+              {formErrors?.email && (
+                <span className="text-red-600">*{formErrors.email}</span>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="register-password-21">Kata sandi *</label>
+              <input
+                type="password"
+                className="form-control"
+                id="register-password-21"
+                value={formData.password}
+                onChange={handleChange}
+                name="password"
+              />
+              {formErrors?.password && (
+                <span className="text-red-600">*{formErrors.password}</span>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="register-password-22">Konfirmasi sandi *</label>
+              <input
+                type="password"
+                className="form-control"
+                id="register-password-22"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                name="confirmPassword"
+              />
+              {formErrors?.confirmPassword && (
+                <span className="text-red-600">*{formErrors.confirmPassword}</span>
+              )}
+            </div>
+          </>
+        )}
+
+        {isGoogleFlow && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded">
+            <p className="text-sm text-green-700">
+              Signed in as: <strong>{session?.user?.name}</strong> ({session?.user?.email})
+            </p>
           </div>
+        )}
 
         <div className="form-group">
-          <label htmlFor="register-email-2">Alamat email *</label>
-          <input
-            type="email"
-            className="form-control"
-            id="register-email-2"
-            value={formData.email}
-            onChange={handleChange}
-            name="email"
-          />
-          {formErrors?.email && (
-            <span className="text-red-600">*{formErrors.email}</span>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="register-password-21">Kata sandi *</label>
-          <input
-            type="password"
-            className="form-control"
-            id="register-password-21"
-            value={formData.password}
-            onChange={handleChange}
-            name="password"
-          />
-          {formErrors?.password && (
-            <span className="text-red-600">*{formErrors.password}</span>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="register-password-22">Konfirmasi sandi *</label>
-          <input
-            type="password"
-            className="form-control"
-            id="register-password-22"
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            name="confirmPassword"
-          />
-          {formErrors?.confirmPassword && (
-            <span className="text-red-600">*{formErrors.confirmPassword}</span>
-          )}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="whatsapp">Nomor WhatsApp</label>
+          <label htmlFor="whatsapp">Nomor WhatsApp *</label>
           <input
             type="text"
             className="form-control"
@@ -291,10 +354,10 @@ const IndividualSignUpComponent = ({ type }) => {
                 formErrors?.agreementChecked ? "text-red-600" : "text-black"
               }`}
               htmlFor="register-policy-2"
-            >Saya menyatakan bahwa saya adalah perokok dan/atau pengguna produk tembakau alternatif berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan pribadi saya sendiri*
+            >
+              Saya menyatakan bahwa saya adalah perokok dan/atau pengguna produk tembakau alternatif berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan pribadi saya sendiri*
             </label>
           </div>
-
 
           <button
             type="button"
@@ -302,37 +365,40 @@ const IndividualSignUpComponent = ({ type }) => {
             disabled={loading}
             className="btn btn-outline-primary-2 mt-3"
           >
-            <span>{loading ? "Loading" : "Register"}</span>
+            <span>
+              {loading 
+                ? "Loading" 
+                : isGoogleFlow 
+                  ? "Complete Profile" 
+                  : "Register"
+              }
+            </span>
             <i className="icon-long-arrow-right"></i>
           </button>
         </div>
 
-        <div className="text-gray-600 text-center py-3">Data Anda aman dan dijamin oleh mrkt. Indonesia</div>
-
-      </form>
-      <div className="form-choice">
-        <p className="text-center">or sign in with</p>
-        <div className="row">
-          <div className="col-sm-12">
-            <button
-              className="btn btn-login btn-g w-full"
-              onClick={handleGoogleSignin}
-            >
-              <i className="icon-google"></i>
-              Masuk dengan Google
-            </button>
-          </div>
-          {/* <div className="col-sm-6">
-            <button
-              className="btn btn-login btn-f w-full"
-              // onClick={() => signIn("facebook")}
-            >
-              <i className="icon-facebook-f"></i>
-              Login With Facebook
-            </button>
-          </div> */}
+        <div className="text-gray-600 text-center py-3">
+          Data Anda aman dan dijamin oleh mrkt. Indonesia
         </div>
-      </div>
+      </form>
+
+      {!isGoogleFlow && (
+        <div className="form-choice">
+          <p className="text-center">or sign in with</p>
+          <div className="row">
+            <div className="col-sm-12">
+              <button
+                className="btn btn-login btn-g w-full"
+                onClick={handleGoogleSignin}
+                disabled={loading}
+              >
+                <i className="icon-google"></i>
+                {loading ? "Loading..." : "Masuk dengan Google"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

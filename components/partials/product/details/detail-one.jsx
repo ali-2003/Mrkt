@@ -15,13 +15,15 @@ import { addToWishlist } from "@/redux/slice/wishlistSlice";
 import { useSession } from "next-auth/react";
 
 function DetailOne(props) {
-  const { product } = props;
+  const { product, onColorChange } = props;
   const [qty, setQty] = useState(1);
   const [nicotine, setNicotine] = useState();
   const [currentUrl, setCurrentUrl] = useState("");
   const [shareableContent, setShareableContent] = useState("");
   const [isMobile, setIsMobile] = useState(false);
   const [productImageUrl, setProductImageUrl] = useState("");
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [availableStock, setAvailableStock] = useState(0);
 
   const { data: session } = useSession();
 
@@ -29,6 +31,34 @@ function DetailOne(props) {
   const router = useRouter();
   const dispatch = useDispatch();
   const wishlist = useSelector((state) => state.wishlist.items);
+
+  // Initialize selected color for pod products and sync with parent
+  useEffect(() => {
+    if (product?.productType === 'pod' && product?.podColors?.length > 0) {
+      // If no color is selected, find the first available color
+      if (!selectedColor) {
+        const firstAvailableColor = product.podColors.find(color => color.isAvailable && color.stock > 0) || product.podColors[0];
+        setSelectedColor(firstAvailableColor);
+        setAvailableStock(firstAvailableColor?.stock || 0);
+        
+        // Notify parent of initial color selection
+        if (onColorChange && firstAvailableColor) {
+          onColorChange(firstAvailableColor);
+        }
+      }
+    } else {
+      setSelectedColor(null);
+      setAvailableStock(product?.stock || 0);
+    }
+  }, [product]);
+
+  // Sync with external color changes (from gallery)
+  useEffect(() => {
+    if (props.selectedColor && props.selectedColor !== selectedColor) {
+      setSelectedColor(props.selectedColor);
+      setAvailableStock(props.selectedColor?.stock || product?.stock || 0);
+    }
+  }, [props.selectedColor]);
 
   // Set current URL, detect mobile, and prepare shareable content
   useEffect(() => {
@@ -54,10 +84,35 @@ function DetailOne(props) {
     }
   }, [product.name, product.image, product.thumbnail]);
 
+  function handleColorChange(color) {
+    setSelectedColor(color);
+    setAvailableStock(color?.stock || 0);
+    setQty(1); // Reset quantity when color changes
+    
+    // Notify parent component about color change
+    if (onColorChange) {
+      onColorChange(color);
+    }
+  }
+
   function onWishlistClick(e) {
     e.preventDefault();
-    if (!isInWishlist(wishlist, product)) {
-      dispatch(addToWishlist(product));
+    const productToAdd = selectedColor 
+      ? { 
+          ...product, 
+          selectedColor: {
+            colorName: selectedColor.colorName,
+            colorCode: selectedColor.colorCode,
+            stock: selectedColor.stock
+          },
+          selectedColorId: selectedColor.colorName,
+          cartImage: selectedColor.pictures?.[0] || product.pictures?.[0],
+          displayName: `${product.name} - ${selectedColor.colorName}`
+        }
+      : product;
+      
+    if (!isInWishlist(wishlist, productToAdd)) {
+      dispatch(addToWishlist(productToAdd));
     } else {
       router?.push("/favorit");
     }
@@ -68,17 +123,59 @@ function DetailOne(props) {
   }
 
   function onCartClick() {
-    if (!product?.stock || qty > product?.stock) {
+    const currentStock = selectedColor ? selectedColor.stock : product?.stock;
+    
+    if (!currentStock || qty > currentStock) {
       toast.error("Insufficient stock");
-      return
+      return;
     }
 
-    for (let i = 0; i < qty; i++) {
-      dispatch(addToCart({
-        ...product,
-      }));
+    // Check if color is selected for pod products
+    if (product?.productType === 'pod' && !selectedColor) {
+      toast.error("Please select a color");
+      return;
     }
-    toast.success("Product added to cart");
+
+    // Create product with color information for cart
+    const productToAdd = {
+      ...product,
+      // Add selected color information if available
+      ...(selectedColor && {
+        selectedColor: {
+          colorName: selectedColor.colorName,
+          colorCode: selectedColor.colorCode,
+          stock: selectedColor.stock,
+          pictures: selectedColor.pictures // Include the pictures array
+        },
+        selectedColorId: selectedColor.colorName,
+        // Use first image of selected color as cart image
+        cartImage: selectedColor.pictures?.[0] || product.pictures?.[0],
+        // Update display name to include color
+        displayName: `${product.name} - ${selectedColor.colorName}`,
+        // Store original product info
+        originalProduct: {
+          name: product.name,
+          price: product.price,
+          sale_price: product.sale_price,
+          business_price: product.business_price,
+          pictures: product.pictures
+        }
+      })
+    };
+
+    console.log("Adding to cart:", {
+      productName: productToAdd.name,
+      selectedColor: productToAdd.selectedColor,
+      cartImage: productToAdd.cartImage,
+      displayName: productToAdd.displayName
+    });
+
+    for (let i = 0; i < qty; i++) {
+      dispatch(addToCart(productToAdd));
+    }
+    
+    const colorText = selectedColor ? ` (${selectedColor.colorName})` : '';
+    toast.success(`Product${colorText} added to cart`);
   }
 
   // Enhanced Facebook sharing for better desktop pre-filling and mobile app opening
@@ -256,7 +353,37 @@ function DetailOne(props) {
         )}
       </div>
 
-      {product?.stock && product?.stock < 1 ? (
+      {/* Color Selection for Pod Products */}
+      {product?.productType === 'pod' && product?.podColors?.length > 0 && (
+        <div className="color-selection-container mb-3">
+          <h4 className="color-selection-title">Available Colors:</h4>
+          <div className="color-options">
+            {product.podColors.map((color, index) => (
+              <div 
+                key={index}
+                className={`color-option ${selectedColor?.colorName === color.colorName ? 'selected' : ''} ${!color.isAvailable || color.stock <= 0 ? 'out-of-stock' : ''}`}
+                onClick={() => color.isAvailable && color.stock > 0 && handleColorChange(color)}
+                title={`${color.colorName} - Stock: ${color.stock}`}
+              >
+                <div 
+                  className="color-circle"
+                  style={{ backgroundColor: color.colorCode }}
+                ></div>
+                <span className="color-name">{color.colorName}</span>
+                {color.stock <= 0 && <span className="stock-status">(Out of Stock)</span>}
+              </div>
+            ))}
+          </div>
+          {selectedColor && (
+            <div className="selected-color-info">
+              <p>Selected: <strong>{selectedColor.colorName}</strong> - Stock: <strong>{selectedColor.stock}</strong></p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pricing */}
+      {availableStock < 1 ? (
         <div className="product-price">
           <span className="out-price">
             Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product?.sale_price?.toFixed(3) || product.price.toFixed(3)}
@@ -279,13 +406,13 @@ function DetailOne(props) {
 
       <div className="details-filter-row details-row-size">
         <label htmlFor="qty">Qty:</label>
-        <Qty changeQty={onChangeQty} max={product?.stock} value={qty}></Qty>
+        <Qty changeQty={onChangeQty} max={availableStock} value={qty}></Qty>
       </div>
 
       <div className="product-details-action">
         <button
           className={`btn-product btn-cart ${
-            product?.stock && product?.stock < 1 ? "btn-disabled" : ""
+            availableStock < 1 || (product?.productType === 'pod' && !selectedColor) ? "btn-disabled" : ""
           }`}
           onClick={onCartClick}
         >
@@ -346,6 +473,112 @@ function DetailOne(props) {
           </a>
         </div>
       </div>
+
+      <style jsx>{`
+        .color-selection-container {
+          margin: 20px 0;
+          padding: 15px;
+          border: 1px solid #e0e0e0;
+          border-radius: 8px;
+          background-color: #f9f9f9;
+        }
+        
+        .color-selection-title {
+          margin-bottom: 15px;
+          font-size: 16px;
+          font-weight: 600;
+          color: #333;
+        }
+        
+        .color-options {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        
+        .color-option {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          cursor: pointer;
+          padding: 8px;
+          border-radius: 8px;
+          border: 2px solid transparent;
+          transition: all 0.3s ease;
+          min-width: 80px;
+          text-align: center;
+        }
+        
+        .color-option:hover:not(.out-of-stock) {
+          border-color: #0088cc;
+          background-color: #f0f8ff;
+        }
+        
+        .color-option.selected {
+          border-color: #0088cc;
+          background-color: #e6f3ff;
+        }
+        
+        .color-option.out-of-stock {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .color-circle {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          border: 2px solid #ddd;
+          margin-bottom: 5px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .color-name {
+          font-size: 12px;
+          font-weight: 500;
+          color: #333;
+          text-transform: capitalize;
+        }
+        
+        .stock-status {
+          font-size: 10px;
+          color: #e74c3c;
+          font-weight: 500;
+        }
+        
+        .selected-color-info {
+          margin-top: 15px;
+          padding: 10px;
+          background-color: #e6f3ff;
+          border-radius: 5px;
+          font-size: 14px;
+        }
+        
+        .selected-color-info p {
+          margin: 0;
+          color: #0088cc;
+        }
+        
+        @media (max-width: 768px) {
+          .color-options {
+            gap: 8px;
+          }
+          
+          .color-option {
+            min-width: 70px;
+            padding: 6px;
+          }
+          
+          .color-circle {
+            width: 35px;
+            height: 35px;
+          }
+          
+          .color-name {
+            font-size: 11px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

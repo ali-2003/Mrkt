@@ -22,9 +22,10 @@ import { account } from "./schemas/auth/account";
 import { verificationToken } from "./schemas/auth/verification-token";
 import { referral } from "./schemas/auth/referral";
 import device from "./schemas/ecom/device";
+import shippingZone from "./schemas/ecom/shippingZone";
 // import { user, account, verificationToken } from 'next-auth-sanity/schemas';
 
 
 export const schema = {
-  types: [product, discount, order, post, author, category, home, about, faq, contact, termsCondition, privacyPolicy, blockContent, contactQuestions, user, referral, account, verificationToken, device],
+  types: [product, discount, order, post, author, category, home, about, faq, contact, termsCondition, privacyPolicy, blockContent, contactQuestions, user, referral, account, verificationToken, device, shippingZone],
 };

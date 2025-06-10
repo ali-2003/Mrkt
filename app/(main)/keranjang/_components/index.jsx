@@ -19,7 +19,6 @@ import { useSession } from "next-auth/react";
 import Qty from "@/components/features/qty";
 
 function CartPageComponent() {
-  const [shippingCost, setShippingCost] = useState(0);
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [cartCalculation, setCartCalculation] = useState(null);
@@ -67,8 +66,8 @@ function CartPageComponent() {
       const userData = await client.fetch(
         `*[_type == 'user' && email == $email][0]{
           ...,
-          "orderCount": count(*[_type == 'order' && customerEmail == $email]), 
-          "lifetimeSpend": sum(*[_type == 'order' && customerEmail == $email].total)
+          "orderCount": count(*[_type == 'order' && email == $email]), 
+          "lifetimeSpend": sum(*[_type == 'order' && email == $email].totalPrice)
         }`,
         { email: session.user.email }
       );
@@ -163,6 +162,7 @@ function CartPageComponent() {
           discountDetails: {
             name: manualDiscount.name || "Discount",
             percentage: manualDiscount.percentage,
+            amount: discountAmount,
             message: `${manualDiscount.percentage}% discount applied`
           }
         };
@@ -201,7 +201,9 @@ function CartPageComponent() {
             details: {
               name: "First Order Discount",
               percentage: 20,
-              message: "20% off your first order"
+              amount: discountAmount,
+              message: "20% off your first order",
+              type: "first"
             }
           };
         }
@@ -220,7 +222,9 @@ function CartPageComponent() {
               details: {
                 name: "Bundle Discount",
                 percentage: 50,
-                message: `Pod device + ${bottleCount} bottles: 50% off bottles`
+                amount: discountAmount,
+                message: `Pod device + ${bottleCount} bottles: 50% off bottles`,
+                type: "bundle"
               }
             };
           }
@@ -236,7 +240,9 @@ function CartPageComponent() {
               details: {
                 name: "Bundle Discount",
                 percentage: 30,
-                message: `Pod device + bottle: 30% off bottle`
+                amount: discountAmount,
+                message: `Pod device + bottle: 30% off bottle`,
+                type: "bundle"
               }
             };
           }
@@ -252,7 +258,9 @@ function CartPageComponent() {
               details: {
                 name: "Volume Discount",
                 percentage: 30,
-                message: `${bottleCount} bottles bundle: 30% off`
+                amount: discountAmount,
+                message: `${bottleCount} bottles bundle: 30% off`,
+                type: "volume"
               }
             };
           }
@@ -268,7 +276,9 @@ function CartPageComponent() {
               details: {
                 name: "Volume Discount",
                 percentage: 20,
-                message: `${bottleCount} bottles bundle: 20% off`
+                amount: discountAmount,
+                message: `${bottleCount} bottles bundle: 20% off`,
+                type: "volume"
               }
             };
           }
@@ -350,11 +360,6 @@ function CartPageComponent() {
     }
   }, [session?.user]);
 
-  // Change shipping cost
-  function onChangeShipping(value) {
-    setShippingCost(value);
-  }
-
   // Change item quantity
   function changeQty(value, index) {
     const item = items[index];
@@ -412,7 +417,7 @@ function CartPageComponent() {
             name: "Referral Discount",
             percentage: 40, // 40% off for referrals
             type: "referral",
-            referredBy: referralCheck.email
+            email: referralCheck.email
           };
           
           // Apply to Redux
@@ -452,64 +457,46 @@ function CartPageComponent() {
     }, 400);
   }
 
-  // Handle checkout
-  async function handleCheckout(e) {
+  // Handle checkout - Updated to redirect to checkout page
+  const handleCheckout = (e) => {
     e.preventDefault();
-
+    
+    console.log("=== CHECKOUT DEBUG START ===");
+    console.log("Session exists:", !!session);
+    console.log("Items count:", items?.length);
+    console.log("Current pathname:", window.location.pathname);
+    
     if (!session) {
+      console.log("No session, redirecting to login");
       router.push("/auth/masuk");
       return;
     }
     
     if (items?.length < 1) {
+      console.log("No items in cart");
       toast.error("No products in the cart");
       return;
     }
 
-    setLoading(true);
-
+    console.log("About to redirect to /checkout");
+    
     try {
-      // Prepare cart items with product type information
-      // FIXED: No longer use a default fallback here since products should have productType set
-      const cartItems = items.map(item => ({
-        ...item
-      }));
-
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          items: cartItems,
-          shippingCost,
-          discount: cart?.discount,
-          discountCalculation: cartCalculation,
-          user: session?.user,
-        }),
-      });
-      
-      const data = await res.json();
-      
-      if (!data.success) {
-        throw new Error(data.message || "Checkout failed");
-      }
-      
-      dispatch(emptyCart());
-      router.push(data.invoice_url);
-    } catch (err) {
-      console.error("Checkout error:", err);
-      toast.error(err.message || "An error occurred during checkout");
-    } finally {
-      setLoading(false);
+      router.push("/checkout");
+      console.log("Router.push to /checkout called successfully");
+    } catch (error) {
+      console.error("Router.push failed:", error);
+      // Fallback to window.location
+      window.location.href = "/checkout";
     }
-  }
+    
+    console.log("=== CHECKOUT DEBUG END ===");
+  };
 
   // Format price with locale
   const formatPrice = (price) => {
-    return price.toLocaleString(undefined, {
-      minimumFractionDigits: 3,
-      maximumFractionDigits: 3,
+    return price.toLocaleString('id-ID', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     });
   };
 
@@ -795,10 +782,15 @@ function CartPageComponent() {
                     <button
                       className="btn btn-outline-primary-2 btn-order btn-block"
                       type="button"
-                      disabled={items.length < 1 || loading}
-                      onClick={handleCheckout}
+                      disabled={items.length < 1}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log("Checkout button clicked!");
+                        handleCheckout(e);
+                      }}
                     >
-                      {loading ? 'Loading...' : 'PROCEED TO CHECKOUT'}
+                      PROCEED TO CHECKOUT
                     </button>
                   </div>
 

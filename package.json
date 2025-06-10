@@ -46,7 +46,8 @@
     "redux-persist": "^6.0.0",
     "sanity": "^3.24.1",
     "sib-api-v3-sdk": "^8.5.0",
-    "styled-components": "^6.1.8"
+    "styled-components": "^6.1.8",
+    "xendit-node": "^7.0.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.0.1",

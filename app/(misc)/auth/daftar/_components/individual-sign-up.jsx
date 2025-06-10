@@ -25,19 +25,42 @@ const IndividualSignUpComponent = ({ type }) => {
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
 
-  // Handle Google OAuth callback
+  // Handle Google OAuth callback and incomplete profiles
   useEffect(() => {
-    if (status === "authenticated" && session?.user && !session?.user?.profileCompleted) {
-      // User signed in with Google but profile incomplete
+    if (status === "authenticated" && session?.user) {
+      // If user is logged in with Google but profile is incomplete
+      if (session.user.authType === 'google' && !session.user.profileCompleted) {
+        setIsGoogleFlow(true);
+        setFormData(prev => ({
+          ...prev,
+          name: session.user.name || "",
+          email: session.user.email || "",
+        }));
+        toast.info("Please complete your profile to continue");
+      } 
+      // If user is already logged in with complete profile, redirect to dashboard
+      else if (session.user.profileCompleted) {
+        router.push("/dashboard");
+      }
+    }
+  }, [session, status, router]);
+
+  // Handle URL parameters for Google signup completion
+  useEffect(() => {
+    const email = searchParams.get('email');
+    const name = searchParams.get('name');
+    const authType = searchParams.get('authType');
+    
+    if (email && name && authType === 'google') {
       setIsGoogleFlow(true);
       setFormData(prev => ({
         ...prev,
-        name: session.user.name || "",
-        email: session.user.email || "",
+        name: decodeURIComponent(name),
+        email: decodeURIComponent(email),
       }));
-      toast.info("Please complete your profile to continue");
+      toast.info("Please complete your profile to finish Google signup");
     }
-  }, [session, status]);
+  }, [searchParams]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -151,6 +174,16 @@ const IndividualSignUpComponent = ({ type }) => {
           dob: formData.dob,
           code,
         };
+      } else if (isGoogleFlow && !session?.user?.id) {
+        // Handle URL-based Google flow (when redirected from OAuth)
+        endpoint = '/api/complete-google-profile';
+        payload = {
+          email: formData.email,
+          name: formData.name,
+          whatsapp: formData.whatsapp,
+          dob: formData.dob,
+          code,
+        };
       }
 
       const res = await fetch(endpoint, {
@@ -170,7 +203,17 @@ const IndividualSignUpComponent = ({ type }) => {
 
       if (isGoogleFlow) {
         toast.success("Profile completed successfully!");
-        router.push("/dashboard");
+        // Force sign in to refresh session
+        const result = await signIn('credentials', {
+          identifier: formData.email,
+          password: 'google_auth', // Special identifier for Google users
+          redirect: false
+        });
+        if (result?.ok) {
+          router.push("/");
+        } else {
+          router.push("/auth/masuk");
+        }
       } else {
         toast.success("User Registered! Login to continue.");
         setFormData(initialState);
@@ -191,18 +234,18 @@ const IndividualSignUpComponent = ({ type }) => {
     try {
       const code = searchParams.get("code");
       
-      // Store form data in sessionStorage only if user has filled some data
-      if (formData.whatsapp || formData.dob) {
-        sessionStorage.setItem('pendingProfileData', JSON.stringify({
-          whatsapp: formData.whatsapp,
-          dob: formData.dob,
-          code: code
-        }));
+      // Store referral code in sessionStorage for after OAuth
+      if (code) {
+        sessionStorage.setItem('referralCode', code);
       }
 
-      // Don't specify callbackUrl to avoid redirect issues
-      const result = await signIn("google");
+      // Initiate Google OAuth with explicit callback URL
+      const result = await signIn("google", {
+        callbackUrl: `${window.location.origin}/auth/complete-profile-check`,
+        redirect: true,
+      });
       
+      // This shouldn't execute if redirect is true
       if (result?.error) {
         toast.error("Error signing in with Google");
         setLoading(false);
@@ -214,22 +257,6 @@ const IndividualSignUpComponent = ({ type }) => {
       setLoading(false);
     }
   };
-
-  // Restore form data after Google OAuth
-  useEffect(() => {
-    if (isGoogleFlow) {
-      const pendingData = sessionStorage.getItem('pendingProfileData');
-      if (pendingData) {
-        const data = JSON.parse(pendingData);
-        setFormData(prev => ({
-          ...prev,
-          whatsapp: data.whatsapp || "",
-          dob: data.dob || "",
-        }));
-        sessionStorage.removeItem('pendingProfileData');
-      }
-    }
-  }, [isGoogleFlow]);
 
   return (
     <div>
@@ -304,7 +331,7 @@ const IndividualSignUpComponent = ({ type }) => {
         {isGoogleFlow && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded">
             <p className="text-sm text-green-700">
-              Signed in as: <strong>{session?.user?.name}</strong> ({session?.user?.email})
+              Signed in as: <strong>{formData.name}</strong> ({formData.email})
             </p>
           </div>
         )}

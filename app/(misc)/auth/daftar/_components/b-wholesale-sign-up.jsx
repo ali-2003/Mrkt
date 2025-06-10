@@ -1,9 +1,9 @@
+// BusinessWholesaleSignUpComponent (paste-7.txt updated)
 "use client";
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
-import { signIn } from "next-auth/react";
 
 const initialState = {
   businessName: "",
@@ -31,7 +31,7 @@ const initialError = {
   agreementChecked: "",
 }
 
-const BusinessOnlineSignUpComponent = ({ type }) => {
+const BusinessWholesaleSignUpComponent = ({ type }) => {
   const [formData, setFormData] = useState(initialState);
   const [formErrors, setFormErrors] = useState(initialError);
   const [loading, setLoading] = useState(false);
@@ -57,7 +57,7 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
     setFormErrors(initialError);
   };
 
-  const validateForm = (formData, type='credentials') => {
+  const validateForm = (formData) => {
     const errors = {};
 
     if (!formData.businessName.trim()) {
@@ -66,7 +66,7 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
       return false;
     } 
 
-    if (type==='credentials' && !formData.email.trim()) {
+    if (!formData.email.trim()) {
       errors.email = "Please enter your email address";
       setFormErrors(errors);
       return false;
@@ -76,19 +76,19 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
       return false;
     }
 
-    if (type==='credentials' && formData.password?.trim()?.length < 6) {
+    if (formData.password?.trim()?.length < 6) {
       errors.password = "Kata sandi harus mengandung enam karakter";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && !formData.confirmPassword?.trim()) {
+    if (!formData.confirmPassword?.trim()) {
       errors.confirmPassword = "Please re-enter your password";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && formData.confirmPassword != formData.password) {
+    if (formData.confirmPassword != formData.password) {
       errors.confirmPassword = "Passwords do not match";
       setFormErrors(errors);
       return false;
@@ -127,7 +127,6 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
     return true;
   };
 
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -157,7 +156,7 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
         toast.error(data.message);
         return;
       }
-      toast.success("Business Registered! Please wait for approval.");
+      toast.success("Business Registered! Please wait for admin approval before you can login.");
       setFormData(initialState);
     } catch (error) {
       console.error("Signup error:", error);
@@ -167,42 +166,14 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    
-    try {
-      setLoading(true);
-
-      if (!validateForm(formData, 'google')) return;
-      
-      const code = searchParams.get("code");
-
-      // if (code) {
-      //   const res2 = await fetch("/api/addDiscount", {
-      //     method: "POST",
-      //     headers: {
-      //       "Content-Type": "application/json",
-      //     },
-      //     body: JSON.stringify({
-      //       email: formData.email,
-      //       code,
-      //     }),
-      //   });
-      // }
-      return
-      await signIn("google", {
-        callbackUrl: "/",
-      });
-    } catch (error) {
-      console.error("Google Signin error:", error);
-      toast.error("Error signing in with Google");
-    } finally {
-      setLoading(false);
-    }
-  }
-    
-
   return (
     <div>
+      <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+        <p className="text-sm text-yellow-700">
+          <strong>Note:</strong> Business accounts cannot sign up with Google. Please use email and password registration. Your account will need admin approval before you can login.
+        </p>
+      </div>
+
       <form action="#" className="mt-1">
         <div className="form-group">
           <label htmlFor="business-name2">Nama pemilik bisnis *</label>
@@ -288,28 +259,8 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
 
         <div className="text-gray-600 text-center py-3">Data Anda aman dan dijamin oleh mrkt. Indonesia</div>
       </form>
-      <div className="form-choice">
-        <p className="text-center">or sign in with</p>
-        <div className="row">
-          <div className="col-sm-12">
-            <button className="btn btn-login btn-g w-full" onClick={() => signIn("google")}>
-              <i className="icon-google"></i>
-              Masuk dengan Google
-            </button>
-          </div>
-          {/* <div className="col-sm-6">
-            <button
-              className="btn btn-login btn-f w-full"
-              // onClick={() => signIn("facebook")}
-            >
-              <i className="icon-facebook-f"></i>
-              Login With Facebook
-            </button>
-          </div> */}
-        </div>
-      </div>
     </div>
   );
 };
 
-export default BusinessOnlineSignUpComponent;
+export default BusinessWholesaleSignUpComponent;

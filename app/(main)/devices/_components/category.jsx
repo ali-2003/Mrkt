@@ -62,21 +62,6 @@ function CategoryPageComponent({ products: data }) {
     router.push(url + "sortBy=" + query);
   }
 
-  const fetchData = async () => {
-    try {
-      const res = await client.fetch(`*[_type == 'product' && productType == 'bottle'] {
-        ...,
-        relatedProducts[]->,
-      }`)
-      return res
-    } catch (err) {
-      console.log(err)
-      return []
-    }
-  }
-
-  const pod = fetchData();
-
 
   return (
     <main className="main shop">

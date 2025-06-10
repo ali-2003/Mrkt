@@ -1,9 +1,9 @@
+// BusinessOnlineSignUpComponent (paste-6.txt updated)
 "use client";
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
-import { signIn } from "next-auth/react";
 import { Trash2 } from "lucide-react";
 
 const initialState = {
@@ -46,32 +46,32 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
     setFormErrors({});
   };
 
-  const validateForm = (formData, type='credentials') => {
+  const validateForm = (formData) => {
     const errors = {};
 
-    if (type==='credentials' && !formData.email.trim()) {
+    if (!formData.email.trim()) {
       errors.email = "Please enter your email address";
       setFormErrors(errors);
       return false;
-    } else if (type==='credentials' && !/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       errors.email = "Please enter a valid email address";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && formData.password?.trim()?.length < 6) {
+    if (formData.password?.trim()?.length < 6) {
       errors.password = "Kata sandi harus mengandung enam karakter";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && !formData.confirmPassword?.trim()) {
+    if (!formData.confirmPassword?.trim()) {
       errors.confirmPassword = "Please re-enter your password";
       setFormErrors(errors);
       return false;
     }
 
-    if (type==='credentials' && formData.confirmPassword != formData.password) {
+    if (formData.confirmPassword != formData.password) {
       errors.confirmPassword = "Passwords do not match";
       setFormErrors(errors);
       return false;
@@ -112,30 +112,13 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!validateForm(formData, 'google')) return;
+    if (!validateForm(formData)) return;
 
     setLoading(true);
 
     try {
       const code = searchParams.get("code");
-      // const res1 = await signUp({
-      //   name: formData.name,
-      //   email: formData.email,
-      //   password: formData.password,
-      // });
-
-      // if (code) {
-      //   const res2 = await fetch("/api/addDiscount", {
-      //     method: "POST",
-      //     headers: {
-      //       "Content-Type": "application/json",
-      //     },
-      //     body: JSON.stringify({
-      //       email: formData.email,
-      //       code,
-      //     }),
-      //   });
-      // }
+      
       const res = await fetch("/api/sign-up", {
         method: "POST",
         headers: {
@@ -146,6 +129,7 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
           accountType: 'business',
           businessType: 'online',
           onlineShops,
+          code,
         }),
       });
 
@@ -155,7 +139,7 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
         toast.error(data.message);
         return;
       }
-      toast.success("Business Registered! Please wait for approval.");
+      toast.success("Business Registered! Please wait for admin approval before you can login.");
       setFormData(initialState);
       setOnlineShops([]);
     } catch (error) {
@@ -168,6 +152,12 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
 
   return (
     <div>
+      <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+        <p className="text-sm text-yellow-700">
+          <strong>Note:</strong> Business accounts cannot sign up with Google. Please use email and password registration. Your account will need admin approval before you can login.
+        </p>
+      </div>
+
       <form className="mt-1">
         <div className="form-group">
           <label htmlFor="register-email-2">Alamat email *</label>
@@ -214,7 +204,6 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
             />
             <span className="flex-[1/7] cursor-pointer icon-arrow-up" onClick={handleStoreAdd}></span>
           </div>
-          {formErrors?.whatsapp && <span className="text-red-600">*{formErrors.whatsapp}</span>}
         </div>
 
         <div className="form-group">
@@ -265,27 +254,6 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
 
         <div className="text-gray-600 text-center py-3">Data Anda aman dan dijamin oleh mrkt. Indonesia</div>
       </form>
-      <div className="form-choice">
-        <p className="text-center">or sign in with</p>
-        <div className="row">
-          <div className="col-sm-12">
-            <button className="btn btn-login btn-g w-full" onClick={() => {}}>
-            {/* <button className="btn btn-login btn-g w-full" onClick={() => signIn("google")}> */}
-              <i className="icon-google"></i>
-              Masuk dengan Google
-            </button>
-          </div>
-          {/* <div className="col-sm-6">
-            <button
-              className="btn btn-login btn-f w-full"
-              // onClick={() => signIn("facebook")}
-            >
-              <i className="icon-facebook-f"></i>
-              Login With Facebook
-            </button>
-          </div> */}
-        </div>
-      </div>
     </div>
   );
 };

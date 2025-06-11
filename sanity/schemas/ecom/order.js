@@ -98,6 +98,8 @@ export const order = {
           type: "string",
         }
       ],
+      // FIXED: Make discount optional to handle null values
+      validation: Rule => Rule.optional()
     },
     {
       name: "totalPrice",
@@ -162,18 +164,27 @@ export const order = {
                   title: "Color Code",
                   type: "string",
                 }
-              ]
+              ],
+              // Make selectedColor optional since not all products have colors
+              validation: Rule => Rule.optional()
             },
             {
               name: "image",
               title: "Product Image URL",
               type: "string",
+              // FIXED: Add validation to ensure it's a string, not an object
+              validation: Rule => Rule.custom((value) => {
+                if (value && typeof value === 'object') {
+                  return 'Image must be a URL string, not an object'
+                }
+                return true
+              })
             }
           ],
         },
       ],
     },
-    // Shipping Information
+    // FIXED: Updated Shipping Information to match Indonesian address format
     {
       name: "shippingInfo",
       title: "Shipping Information",
@@ -195,8 +206,13 @@ export const order = {
           type: "string"
         },
         {
-          name: "address",
+          name: "streetAddress",
           title: "Street Address",
+          type: "string"
+        },
+        {
+          name: "district",
+          title: "District/Subdistrict",
           type: "string"
         },
         {
@@ -205,14 +221,20 @@ export const order = {
           type: "string"
         },
         {
-          name: "state",
-          title: "State/Province",
-          type: "string"
-        },
-        {
           name: "postalCode",
           title: "Postal Code",
           type: "string"
+        },
+        {
+          name: "province",
+          title: "Province",
+          type: "string"
+        },
+        {
+          name: "country",
+          title: "Country",
+          type: "string",
+          initialValue: "Indonesia"
         },
         {
           name: "notes",
@@ -299,7 +321,9 @@ export const order = {
           title: "Payment Destination",
           type: "string"
         }
-      ]
+      ],
+      // Make xenditPaymentData optional since it's only populated after payment
+      validation: Rule => Rule.optional()
     },
     // Timestamps
     {

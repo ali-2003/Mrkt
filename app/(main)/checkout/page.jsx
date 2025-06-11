@@ -607,7 +607,7 @@ function CheckoutPageComponent() {
                                 <small>{formData.province}</small>
                                 {provinces.find(p => p._id === selectedProvince)?.estimatedDays && (
                                   <small className="text-muted d-block">
-                                    Est: {provinces.find(p => p._id === selectedProvince)?.estimatedDays}
+                                    Est: {provinces.find(p => p._id === selectedProvince)?.estimatedDays} Days
                                   </small>
                                 )}
                               </div>

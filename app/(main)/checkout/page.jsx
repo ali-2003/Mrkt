@@ -12,19 +12,22 @@ import urlFor from "@/sanity/lib/image";
 
 function CheckoutPageComponent() {
   const [loading, setLoading] = useState(false);
-  const [states, setStates] = useState([]);
-  const [selectedState, setSelectedState] = useState("");
+  const [provinces, setProvinces] = useState([]);
+  const [selectedProvince, setSelectedProvince] = useState("");
   const [shippingCost, setShippingCost] = useState(0);
+  const [cartCalculation, setCartCalculation] = useState(null);
   
-  // Form data
+  // Form data - Updated for Indonesian address format
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
     phone: "",
-    address: "",
+    streetAddress: "",
+    district: "",
     city: "",
-    state: "",
     postalCode: "",
+    province: "",
+    country: "Indonesia",
     notes: ""
   });
 
@@ -54,16 +57,16 @@ function CheckoutPageComponent() {
   // Redirect if cart is empty
   useEffect(() => {
     if (!items || items.length === 0) {
-      router.push("/keranjang"); // Updated to use correct cart URL
+      router.push("/keranjang");
       return;
     }
   }, [items, router]);
 
   // Fetch shipping zones from Sanity
   useEffect(() => {
-    const fetchStates = async () => {
+    const fetchProvinces = async () => {
       try {
-        const statesData = await client.fetch(`
+        const provincesData = await client.fetch(`
           *[_type == 'shippingZone' && isActive == true] | order(state asc) {
             _id,
             state,
@@ -72,50 +75,221 @@ function CheckoutPageComponent() {
             estimatedDays
           }
         `);
-        setStates(statesData);
+        setProvinces(provincesData);
       } catch (error) {
         console.error("Error fetching shipping zones:", error);
         toast.error("Failed to load shipping information");
       }
     };
 
-    fetchStates();
+    fetchProvinces();
   }, []);
 
-  // Calculate cart totals (using cart's calculation)
-  const calculateSubtotal = () => {
-    if (!items || !Array.isArray(items) || items.length === 0) return 0;
-    return items.reduce((total, item) => total + (item.sum || 0), 0);
+  // CRITICAL FIX: Use the same discount calculation logic as the cart page
+  const calculateCartTotals = async () => {
+    if (!items || items.length === 0) return null;
+
+    try {
+      // Get user data for first order discount calculation
+      const getUserData = async () => {
+        if (!session?.user?.email) return null;
+        try {
+          const userData = await client.fetch(
+            `*[_type == 'user' && email == $email][0]{
+              ...,
+              "orderCount": count(*[_type == 'order' && email == $email]), 
+              "lifetimeSpend": sum(*[_type == 'order' && email == $email].totalPrice)
+            }`,
+            { email: session.user.email }
+          );
+          return userData || { orderCount: 0, lifetimeSpend: 0 };
+        } catch (err) {
+          console.error("Error fetching user data:", err);
+          return { orderCount: 0, lifetimeSpend: 0 };
+        }
+      };
+
+      // Ensure all items have necessary properties
+      const validItems = items.map(item => ({
+        ...item,
+        qty: item.qty || 1,
+        sum: typeof item.sum === 'number' ? item.sum : (item.sale_price || item.price || 0) * (item.qty || 1),
+        productType: item.productType
+      }));
+
+      // Calculate base subtotal
+      const subtotal = validItems.reduce((total, item) => total + item.sum, 0);
+
+      // If there's a manual discount applied, use it
+      if (discount && discount.percentage) {
+        const discountAmount = subtotal * (discount.percentage / 100);
+        return {
+          original: subtotal,
+          discount: discountAmount,
+          total: subtotal - discountAmount,
+          discountDetails: {
+            name: discount.name || "Discount",
+            percentage: discount.percentage,
+            amount: discountAmount,
+            type: discount.type
+          }
+        };
+      }
+
+      // Otherwise check for automatic discounts
+      const userDataObj = await getUserData();
+      
+      // Helper functions
+      const countProductTypes = (items, productType) => {
+        return items.filter(item => item?.productType === productType)
+          .reduce((count, item) => count + (item.qty || 1), 0);
+      };
+      
+      const getProductTypeTotal = (items, productType) => {
+        return items
+          .filter(item => item?.productType === productType)
+          .reduce((total, item) => total + (item.sum || 0), 0);
+      };
+      
+      const isEligibleForDiscounts = () => {
+        return !session || session?.user?.type !== 'business';
+      };
+
+      const bottleCount = countProductTypes(validItems, 'bottle');
+      const hasPodDevice = countProductTypes(validItems, 'pod') > 0;
+      const bottleTotal = getProductTypeTotal(validItems, 'bottle');
+
+      let bestDiscount = { amount: 0, details: null };
+
+      // Check for first order discount (logged in users only)
+      if (session?.user && userDataObj?.orderCount === 0) {
+        const discountAmount = subtotal * 0.2;
+        if (discountAmount > bestDiscount.amount) {
+          bestDiscount = {
+            amount: discountAmount,
+            details: {
+              name: "First Order Discount",
+              percentage: 20,
+              amount: discountAmount,
+              type: "first"
+            }
+          };
+        }
+      }
+
+      // If not a business account, check for bundle discounts
+      if (isEligibleForDiscounts()) {
+        if (hasPodDevice && bottleCount >= 3) {
+          const discountAmount = bottleTotal * 0.5;
+          if (discountAmount > bestDiscount.amount) {
+            bestDiscount = {
+              amount: discountAmount,
+              details: {
+                name: "Bundle Discount",
+                percentage: 50,
+                amount: discountAmount,
+                type: "bundle"
+              }
+            };
+          }
+        } else if (hasPodDevice && bottleCount > 0) {
+          const discountAmount = bottleTotal * 0.3;
+          if (discountAmount > bestDiscount.amount) {
+            bestDiscount = {
+              amount: discountAmount,
+              details: {
+                name: "Bundle Discount", 
+                percentage: 30,
+                amount: discountAmount,
+                type: "bundle"
+              }
+            };
+          }
+        } else if (bottleCount >= 5) {
+          const discountAmount = bottleTotal * 0.3;
+          if (discountAmount > bestDiscount.amount) {
+            bestDiscount = {
+              amount: discountAmount,
+              details: {
+                name: "Volume Discount",
+                percentage: 30,
+                amount: discountAmount,
+                type: "volume"
+              }
+            };
+          }
+        } else if (bottleCount >= 3) {
+          const discountAmount = bottleTotal * 0.2;
+          if (discountAmount > bestDiscount.amount) {
+            bestDiscount = {
+              amount: discountAmount,
+              details: {
+                name: "Volume Discount",
+                percentage: 20,
+                amount: discountAmount,
+                type: "volume"
+              }
+            };
+          }
+        }
+      }
+
+      // Apply the best discount if any
+      if (bestDiscount.amount > 0 && bestDiscount.details) {
+        return {
+          original: subtotal,
+          discount: bestDiscount.amount,
+          total: subtotal - bestDiscount.amount,
+          discountDetails: bestDiscount.details
+        };
+      }
+
+      // No discounts apply
+      return {
+        original: subtotal,
+        discount: 0,
+        total: subtotal,
+        discountDetails: null
+      };
+
+    } catch (error) {
+      console.error("Error in discount calculation:", error);
+      const subtotal = items.reduce((total, item) => total + (item?.sum || 0), 0);
+      return {
+        original: subtotal,
+        discount: 0,
+        total: subtotal,
+        discountDetails: null
+      };
+    }
   };
 
-  const calculateDiscount = () => {
-    if (!discount || !discount.percentage) return 0;
-    const subtotal = calculateSubtotal();
-    return subtotal * (discount.percentage / 100);
-  };
+  // Calculate cart totals on component mount and when dependencies change
+  useEffect(() => {
+    if (items?.length > 0) {
+      calculateCartTotals().then(calculation => {
+        setCartCalculation(calculation);
+      });
+    }
+  }, [items, session?.user, discount]);
 
-  const subtotal = calculateSubtotal();
-  const discountAmount = calculateDiscount();
-  const afterDiscountTotal = subtotal - discountAmount;
-  const finalTotal = afterDiscountTotal + shippingCost;
-
-  // Handle state selection and update shipping cost
-  const handleStateChange = (e) => {
-    const stateId = e.target.value;
-    setSelectedState(stateId);
+  // Handle province selection and update shipping cost
+  const handleProvinceChange = (e) => {
+    const provinceId = e.target.value;
+    setSelectedProvince(provinceId);
     
-    const selectedStateData = states.find(state => state._id === stateId);
-    if (selectedStateData) {
-      setShippingCost(selectedStateData.shippingCost || 0);
+    const selectedProvinceData = provinces.find(province => province._id === provinceId);
+    if (selectedProvinceData) {
+      setShippingCost(selectedProvinceData.shippingCost || 0);
       setFormData(prev => ({
         ...prev,
-        state: selectedStateData.state
+        province: selectedProvinceData.state
       }));
     } else {
       setShippingCost(0);
       setFormData(prev => ({
         ...prev,
-        state: ""
+        province: ""
       }));
     }
   };
@@ -131,17 +305,18 @@ function CheckoutPageComponent() {
 
   // Validate form
   const validateForm = () => {
-    const required = ['fullName', 'email', 'phone', 'address', 'city', 'state'];
+    const required = ['fullName', 'email', 'phone', 'streetAddress', 'district', 'city', 'postalCode', 'province'];
     
     for (let field of required) {
       if (!formData[field] || formData[field].trim() === '') {
-        toast.error(`Please fill in ${field.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
+        const fieldName = field.replace(/([A-Z])/g, ' $1').toLowerCase();
+        toast.error(`Please fill in ${fieldName.replace('street address', 'street address')}`);
         return false;
       }
     }
     
-    if (!selectedState) {
-      toast.error("Please select a state");
+    if (!selectedProvince) {
+      toast.error("Please select a province");
       return false;
     }
     
@@ -161,25 +336,13 @@ function CheckoutPageComponent() {
         fullName: formData.fullName,
         email: formData.email,
         phone: formData.phone,
-        address: formData.address,
+        streetAddress: formData.streetAddress,
+        district: formData.district,
         city: formData.city,
-        state: formData.state,
         postalCode: formData.postalCode,
+        province: formData.province,
+        country: formData.country,
         notes: formData.notes
-      };
-
-      // Prepare discount calculation in the format the API expects
-      const discountCalculation = {
-        original: subtotal,
-        discount: discountAmount,
-        total: afterDiscountTotal,
-        discountDetails: discount ? {
-          name: discount.name,
-          percentage: discount.percentage,
-          amount: discountAmount,
-          message: discount.percentage ? `${discount.percentage}% discount applied` : 'Discount applied',
-          type: discount.type
-        } : null
       };
 
       const response = await fetch("/api/checkout", {
@@ -191,7 +354,7 @@ function CheckoutPageComponent() {
           items,
           shippingCost,
           discount,
-          discountCalculation,
+          discountCalculation: cartCalculation,
           user: session.user,
           shippingInfo
         }),
@@ -236,6 +399,10 @@ function CheckoutPageComponent() {
     }
     return '/placeholder-image.jpg';
   };
+
+  // Calculate final totals
+  const subtotalAfterDiscount = cartCalculation?.total || (items?.reduce((total, item) => total + (item.sum || 0), 0) || 0);
+  const finalTotal = subtotalAfterDiscount + shippingCost;
 
   if (!session || !items || items.length === 0) {
     return <div>Loading...</div>;
@@ -293,25 +460,37 @@ function CheckoutPageComponent() {
                     </div>
                     
                     <div className="col-sm-6">
-                      <label>Postal Code</label>
+                      <label>Postal Code *</label>
                       <input
                         type="text"
                         name="postalCode"
                         className="form-control"
                         value={formData.postalCode}
                         onChange={handleInputChange}
+                        required
                       />
                     </div>
                   </div>
 
-                  <label>Address *</label>
+                  <label>Street Address *</label>
                   <input
                     type="text"
-                    name="address"
+                    name="streetAddress"
                     className="form-control"
-                    value={formData.address}
+                    value={formData.streetAddress}
                     onChange={handleInputChange}
                     placeholder="Street address"
+                    required
+                  />
+
+                  <label>District/Subdistrict *</label>
+                  <input
+                    type="text"
+                    name="district"
+                    className="form-control"
+                    value={formData.district}
+                    onChange={handleInputChange}
+                    placeholder="District or Subdistrict"
                     required
                   />
 
@@ -329,22 +508,32 @@ function CheckoutPageComponent() {
                     </div>
 
                     <div className="col-sm-6">
-                      <label>State *</label>
+                      <label>Province *</label>
                       <select
                         className="form-control"
-                        value={selectedState}
-                        onChange={handleStateChange}
+                        value={selectedProvince}
+                        onChange={handleProvinceChange}
                         required
                       >
-                        <option value="">Select State</option>
-                        {states.map((state) => (
-                          <option key={state._id} value={state._id}>
-                            {state.state}
+                        <option value="">Select Province</option>
+                        {provinces.map((province) => (
+                          <option key={province._id} value={province._id}>
+                            {province.state}
                           </option>
                         ))}
                       </select>
                     </div>
                   </div>
+
+                  <label>Country</label>
+                  <input
+                    type="text"
+                    name="country"
+                    className="form-control"
+                    value={formData.country}
+                    onChange={handleInputChange}
+                    readOnly
+                  />
 
                   <label>Order Notes (Optional)</label>
                   <textarea
@@ -386,8 +575,7 @@ function CheckoutPageComponent() {
                                     {item.name}
                                     {item.selectedColor && (
                                       <span className="product-color">
-                                        <br />
-                                        <small>Color: {item.selectedColor.colorName}</small>
+                                        <small> - {item.selectedColor.colorName}</small>
                                       </span>
                                     )}
                                   </h3>
@@ -407,60 +595,35 @@ function CheckoutPageComponent() {
                             <strong>Subtotal</strong>
                           </td>
                           <td>
-                            <strong>Rp {formatPrice(subtotal)}</strong>
-                          </td>
-                        </tr>
-
-                        {discountAmount > 0 && (
-                          <tr className="cart-discount">
-                            <td>
-                              <strong>
-                                Discount
-                                {discount?.name && (
-                                  <div>
-                                    <small>{discount.name}</small>
-                                    {discount.percentage && (
-                                      <small> ({discount.percentage}%)</small>
-                                    )}
-                                  </div>
-                                )}
-                              </strong>
-                            </td>
-                            <td>
-                              <strong className="text-danger">
-                                -Rp {formatPrice(discountAmount)}
-                              </strong>
-                            </td>
-                          </tr>
-                        )}
-
-                        <tr className="cart-subtotal">
-                          <td>
-                            <strong>Subtotal After Discount</strong>
-                          </td>
-                          <td>
-                            <strong>Rp {formatPrice(afterDiscountTotal)}</strong>
+                            <strong>Rp {formatPrice(subtotalAfterDiscount)}</strong>
                           </td>
                         </tr>
 
                         <tr className="shipping-row">
                           <td>
                             <strong>Shipping</strong>
-                            {selectedState && (
+                            {selectedProvince && (
                               <div>
-                                <small>{formData.state}</small>
-                                {states.find(s => s._id === selectedState)?.estimatedDays && (
-                                  
-                                  <small className="text-muted">
-                                      Est: {states.find(s => s._id === selectedState)?.estimatedDays}
+                                <small>{formData.province}</small>
+                                {provinces.find(p => p._id === selectedProvince)?.estimatedDays && (
+                                  <small className="text-muted d-block">
+                                    Est: {provinces.find(p => p._id === selectedProvince)?.estimatedDays}
                                   </small>
                                 )}
+                              </div>
+                            )}
+                            {!selectedProvince && (
+                              <div>
+                                <small className="text-muted">To be calculated</small>
                               </div>
                             )}
                           </td>
                           <td>
                             <strong>
-                              {shippingCost > 0 ? `Rp ${formatPrice(shippingCost)}` : 'Free'}
+                              {selectedProvince 
+                                ? (shippingCost > 0 ? `Rp ${formatPrice(shippingCost)}` : 'Free')
+                                : 'To be calculated'
+                              }
                             </strong>
                           </td>
                         </tr>
@@ -470,7 +633,12 @@ function CheckoutPageComponent() {
                             <strong>Total</strong>
                           </td>
                           <td>
-                            <strong>Rp {formatPrice(finalTotal)}</strong>
+                            <strong>
+                              {selectedProvince 
+                                ? `Rp ${formatPrice(finalTotal)}`
+                                : 'To be calculated'
+                              }
+                            </strong>
                           </td>
                         </tr>
                       </tfoot>
@@ -479,7 +647,7 @@ function CheckoutPageComponent() {
                     <button
                       type="submit"
                       className="btn btn-outline-primary-2 btn-order btn-block"
-                      disabled={loading}
+                      disabled={loading || !selectedProvince}
                     >
                       {loading ? 'Processing...' : 'PROCEED TO PAYMENT'}
                     </button>

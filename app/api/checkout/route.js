@@ -7,7 +7,7 @@ import { Xendit } from "xendit-node";
 const xendit = new Xendit({
   secretKey: process.env.XENDIT_SECRET_KEY,
   // Explicitly set the region if needed (uncomment if you're not in Indonesia)
-  // serverUrl: "https://api.xendit.co"
+  serverUrl: "https://api.xendit.co"
 });
 
 export async function POST(request) {

@@ -4,23 +4,23 @@ import React, { useState, useEffect } from "react";
 import Modal from "react-modal";
 import Cookie from "js-cookie";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 
 const customStyles = {
   overlay: {
-    backgroundColor: "rgba(51,51,51,0.4)",
-    backdropFilter: "blur(5px)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backdropFilter: "blur(4px)",
     zIndex: "10001",
   },
   content: {
-    maxWidth: "450px",
-    width: "85vw",
+    maxWidth: "520px",
+    width: "90vw",
     margin: "auto",
     padding: 0,
     border: "none",
-    borderRadius: "12px",
-    boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+    borderRadius: "8px",
+    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
+    background: "#ffffff",
   }
 };
 
@@ -29,59 +29,36 @@ Modal.setAppElement("body");
 function CombinedConfirmationModal() {
   const [open, setOpen] = useState(false);
   const [privacyExpanded, setPrivacyExpanded] = useState(false);
-  const [ageChecked, setAgeChecked] = useState(false);
-  const [privacyChecked, setPrivacyChecked] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    // Check cookies
     const ageConfirmed = Cookie.get(`hideConfirm-mrkt`);
     const privacyConfirmed = Cookie.get(`hideConfirm-privacy-mrkt`);
     
     if (!ageConfirmed || !privacyConfirmed) {
       setOpen(true);
-      // Set checkboxes based on existing cookies
-      if (ageConfirmed) setAgeChecked(true);
-      if (privacyConfirmed) setPrivacyChecked(true);
     }
   }, []);
 
   function closeModal() {
     document
       .getElementById("combined-popup-modal")
-      .classList.remove("ReactModal__Content--after-open");
+      ?.classList.remove("ReactModal__Content--after-open");
 
     if (document.querySelector(".combined-modal-overlay")) {
       document.querySelector(".combined-modal-overlay").style.opacity = "0";
-      document.querySelector(".combined-modal-overlay").style.display = "none";
     }
     
-    setTimeout(() => setOpen(false), 350);
+    setTimeout(() => setOpen(false), 300);
   }
 
-  const storeAgeCookie = () => {
-    Cookie.set(`hideConfirm-mrkt`, "true", {
-      expires: 7,
-    });
+  const handleAcceptAll = () => {
+    Cookie.set(`hideConfirm-mrkt`, "true", { expires: 7 });
+    Cookie.set(`hideConfirm-privacy-mrkt`, "true", { expires: 7 });
+    closeModal();
   };
 
-  const storePrivacyCookie = () => {
-    Cookie.set(`hideConfirm-privacy-mrkt`, "true", {
-      expires: 7,
-    });
-  };
-
-  const handleConfirm = () => {
-    if (ageChecked) storeAgeCookie();
-    if (privacyChecked) storePrivacyCookie();
-    
-    // Close only if both are checked
-    if (ageChecked && privacyChecked) {
-      closeModal();
-    }
-  };
-
-  const cancelConfirm = () => {
+  const handleDecline = () => {
     closeModal();
     router.back();
   };
@@ -97,135 +74,129 @@ function CombinedConfirmationModal() {
       overlayClassName="flex items-center justify-center combined-modal-overlay"
       id="combined-popup-modal"
     >
-      <div className="modal-content bg-white rounded-lg overflow-hidden">
+      <div className="modal-content">
         {/* Header */}
-        <div className="modal-header p-3 border-b border-gray-200 flex items-center justify-between">
-          <Image
-            src="/images/home/header-logo-t.png"
-            alt="logo"
-            className="logo"
-            width="90"
-            height="15"
-          />
-          <button 
-            type="button" 
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            onClick={closeModal}
-          >
-            <span className="text-xl" aria-hidden="true">×</span>
-          </button>
+        <div className="px-8 pt-8 pb-6 border-b border-gray-100">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-2">Syarat & Privasi</h1>
+          <p className="text-gray-600 leading-relaxed">
+            Sebelum mengakses Mrkt, harap tinjau dan setujui syarat layanan dan kebijakan privasi kami.
+          </p>
         </div>
 
-        {/* Content area */}
-        <div className="modal-body p-4 max-h-[60vh] overflow-y-auto text-base">
-          <h2 className="text-2xl font-semibold mb-3 text-center">Selamat Datang di Mrkt</h2>
-          
-          <div className="age-confirmation mb-4 bg-gray-50 p-3 rounded-lg">
-            <div className="flex gap-2 mb-2">
-              <div className="flex-shrink-0 mt-1">
-                <input 
-                  type="checkbox" 
-                  id="age-checkbox" 
-                  className="w-5 h-5 accent-[#154881]" 
-                  checked={ageChecked}
-                  onChange={() => setAgeChecked(!ageChecked)}
-                />
-              </div>
-              <div>
-                <label htmlFor="age-checkbox" className="font-medium cursor-pointer text-lg">Konfirmasi Usia 18+</label>
-                <p className="text-gray-600 mt-1">
-                  Saya menyatakan bahwa saya berusia 18 tahun atau lebih. Mrkt. hanya bisa diakses oleh pengguna berusia 18 tahun ke atas.
-                </p>
-              </div>
+        {/* Content */}
+        <div className="px-8 py-6">
+          <div className="space-y-6">
+            {/* Age Confirmation */}
+            <div className="pb-4 border-b border-gray-50">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Verifikasi Usia</h3>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                Dengan melanjutkan, Anda mengkonfirmasi bahwa Anda berusia 18 tahun atau lebih. 
+                Layanan ini hanya terbatas untuk pengguna dewasa.
+              </p>
             </div>
-          </div>
-          
-          <div className="privacy-confirmation bg-gray-50 p-3 rounded-lg">
-            <div className="flex gap-2 mb-2">
-              <div className="flex-shrink-0 mt-1">
-                <input 
-                  type="checkbox" 
-                  id="privacy-checkbox" 
-                  className="w-5 h-5 accent-[#154881]" 
-                  checked={privacyChecked}
-                  onChange={() => setPrivacyChecked(!privacyChecked)}
-                />
-              </div>
-              <div>
-                <label htmlFor="privacy-checkbox" className="font-medium cursor-pointer text-lg">Kebijakan Privasi</label>
-                <p className="text-gray-600 mt-1">
-                  Saya menyetujui pemrosesan data pribadi sesuai dengan <Link href="/kebijakan-privasi" className="text-blue-600 hover:underline">Kebijakan Privasi dan Kebijakan Cookie</Link>
-                </p>
-              </div>
-            </div>
-            
-            <button 
-              onClick={() => setPrivacyExpanded(!privacyExpanded)} 
-              className="flex items-center text-blue-600 mt-2 hover:underline"
-            >
-              {privacyExpanded ? 'Sembunyikan detail' : 'Lihat detail kebijakan'} 
-              <svg xmlns="http://www.w3.org/2000/svg" className={`ml-1 h-4 w-4 transition-transform ${privacyExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            
-            {privacyExpanded && (
-              <div className="expanded-privacy-content mt-3 pt-2 border-t border-gray-200">
-                <p className="mb-2 text-gray-600">Kami tidak membagikan informasi pribadi Anda dengan pihak ketiga, kecuali jika dibutuhkan untuk kebutuhan profesional dan bisnis kami secara sah.</p>
 
-                <h3 className="text-lg font-semibold mb-1">Poin Penting</h3>
-                <ul className="pl-5 mb-2 text-gray-600">
-                  <li className="list-disc mb-1">
-                    Kami mengumpulkan data pribadi seperti alamat IP, perilaku penelusuran, dan informasi lain yang dibutuhkan.
-                  </li>
-                  <li className="list-disc mb-1">Kami mungkin membagikan data Anda kepada pihak ketiga yang terpercaya.</li>
-                  <li className="list-disc mb-1">Anda memiliki hak untuk mengakses, memperbaiki dan menghapus data Anda.</li>
-                </ul>
-                
-                <h3 className="text-lg font-semibold mb-1">Kelola Preferensi</h3>
-                <div className="mb-2">
-                  <label className="flex gap-2 items-center mb-1 text-gray-600">
-                    <input type="checkbox" defaultChecked={true} disabled className="accent-blue-600" />
-                    Cookie Esensial (dibutuhkan untuk fungsionalitas)
-                  </label>
-                  <label className="flex gap-2 items-center mb-1 text-gray-600">
-                    <input type="checkbox" className="accent-blue-600" />
-                    Cookie Analytics (membantu kami meningkatkan situs)
-                  </label>
-                  <label className="flex gap-2 items-center mb-1 text-gray-600">
-                    <input type="checkbox" className="accent-blue-600" />
-                    Cookie Pemasaran (iklan dipersonalisasi)
-                  </label>
+            {/* Privacy Policy */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Kebijakan Privasi & Data</h3>
+              <p className="text-gray-600 text-sm leading-relaxed mb-3">
+                Anda menyetujui praktik pemrosesan data kami sebagaimana diuraikan dalam{" "}
+                <Link 
+                  href="/kebijakan-privasi" 
+                  className="text-blue-600 hover:text-blue-700 underline underline-offset-2"
+                >
+                  Kebijakan Privasi
+                </Link>{" "}
+                dan Kebijakan Cookie kami.
+              </p>
+
+              <button 
+                onClick={() => setPrivacyExpanded(!privacyExpanded)} 
+                className="text-gray-500 hover:text-gray-700 text-sm flex items-center transition-colors"
+              >
+                {privacyExpanded ? 'Sembunyikan detail' : 'Lihat detail kebijakan'}
+                <svg 
+                  className={`ml-1 h-4 w-4 transition-transform ${privacyExpanded ? 'rotate-180' : ''}`} 
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {privacyExpanded && (
+                <div className="mt-4 p-4 bg-gray-50 rounded border border-gray-100">
+                  <div className="text-sm text-gray-700 space-y-4">
+                    <p>
+                      Kami mengumpulkan dan memproses data pribadi termasuk alamat IP, perilaku penelusuran, 
+                      dan informasi lain yang diperlukan untuk menyediakan layanan kami secara efektif.
+                    </p>
+
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Poin Utama:</h4>
+                      <ul className="space-y-1 ml-4">
+                        <li className="relative">
+                          <span className="absolute -left-4 text-gray-400">•</span>
+                          Pengumpulan data mencakup alamat IP dan pola penelusuran
+                        </li>
+                        <li className="relative">
+                          <span className="absolute -left-4 text-gray-400">•</span>
+                          Informasi dapat dibagikan dengan pihak ketiga terpercaya
+                        </li>
+                        <li className="relative">
+                          <span className="absolute -left-4 text-gray-400">•</span>
+                          Anda memiliki hak untuk mengakses, memperbaiki, dan menghapus data Anda
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-3">Preferensi Cookie:</h4>
+                      <div className="space-y-2">
+                        <label className="flex items-center text-sm">
+                          <input 
+                            type="checkbox" 
+                            defaultChecked={true} 
+                            disabled 
+                            className="mr-3 accent-gray-900"
+                          />
+                          <span className="text-gray-600">Cookie esensial (diperlukan untuk fungsionalitas)</span>
+                        </label>
+                        <label className="flex items-center text-sm">
+                          <input type="checkbox" className="mr-3 accent-gray-900" />
+                          <span className="text-gray-600">Cookie analitik (peningkatan situs)</span>
+                        </label>
+                        <label className="flex items-center text-sm">
+                          <input type="checkbox" className="mr-3 accent-gray-900" />
+                          <span className="text-gray-600">Cookie pemasaran (iklan yang dipersonalisasi)</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-500 pt-3 border-t border-gray-200">
+                      Penggunaan berkelanjutan dari situs web ini tanpa mengubah pengaturan merupakan penerimaan kebijakan cookie kami.
+                    </p>
+                  </div>
                 </div>
-
-                <p className="text-xs text-gray-500">Dengan terus menggunakan situs web ini tanpa mengubah pengaturan, Anda menyetujui penggunaan cookie.</p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Footer with buttons */}
-        <div className="modal-footer p-3 border-t border-gray-200">
-          <div className="flex gap-2">
-            <button 
-              onClick={cancelConfirm} 
-              className="w-1/2 py-2.5 px-4 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition-colors text-base"
-            >
-              Batal
-            </button>
-            <button 
-              onClick={handleConfirm} 
-              className={`w-1/2 py-2.5 px-4 ${ageChecked && privacyChecked ? 'bg-[#154881] hover:bg-[#154881e6]' : 'bg-gray-300 cursor-not-allowed'} text-white rounded transition-colors text-base`}
-              disabled={!ageChecked || !privacyChecked}
-            >
-              Konfirmasi
-            </button>
-          </div>
-          {(!ageChecked || !privacyChecked) && (
-            <p className="text-center text-xs text-gray-500 mt-2">
-              Silakan setujui kedua persyaratan di atas untuk melanjutkan
-            </p>
-          )}
+        {/* Footer */}
+        <div className="px-8 py-6 bg-gray-50 border-t border-gray-100 flex gap-4">
+          <button 
+            onClick={handleDecline} 
+            className="flex-1 px-6 py-3 text-gray-700 bg-white border border-gray-300 rounded font-medium hover:bg-gray-50 transition-colors"
+          >
+            Tolak
+          </button>
+          <button 
+            onClick={handleAcceptAll} 
+            className="flex-1 px-6 py-3 bg-gray-900 text-white rounded font-medium hover:bg-gray-800 transition-colors"
+          >
+            Setujui Semua Syarat
+          </button>
         </div>
       </div>
     </Modal>

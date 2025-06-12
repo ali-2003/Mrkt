@@ -46,7 +46,17 @@ export const cartSlice = createSlice({
         return product.price || 0;
       };
 
-      const effectivePrice = product.displayPrice || getEffectivePrice(product);
+      // Use displayPrice if provided, otherwise calculate
+      const effectivePrice = product.displayPrice || product.effectivePrice || getEffectivePrice(product);
+
+      console.log("Cart Slice - Adding product:", {
+        name: product.name,
+        isBusinessUser: product.isBusinessUser,
+        business_price: product.business_price,
+        sale_price: product.sale_price,
+        price: product.price,
+        effectivePrice: effectivePrice
+      });
 
       // Extract necessary product information including color data and business context
       const {
@@ -60,14 +70,14 @@ export const cartSlice = createSlice({
         price,
         sale_price,
         business_price,
-        productType = 'bottle', // Default to bottle if not specified
-        selectedColor,         // Color information
-        selectedColorId,       // Color ID
-        cartImage,            // Color-specific image
-        displayName,          // Product name with color
-        originalProduct,      // Original product data
-        isBusinessUser = false, // Business user context
-        addedAsBusinessUser = false // Business context when added
+        productType = 'bottle',
+        selectedColor,
+        selectedColorId,
+        cartImage,
+        displayName,
+        originalProduct,
+        isBusinessUser = false,
+        addedAsBusinessUser = false
       } = product;
 
       if (existingIndex === -1) {
@@ -79,6 +89,7 @@ export const cartSlice = createSlice({
           sale_price,              // Sale price
           business_price,          // Business price
           effectivePrice,          // Price that was actually shown to user
+          unitPrice: effectivePrice, // Add unitPrice for cart display consistency
           cartId: getRandomId(),
           productType,
           sum: effectivePrice,     // Total for this item (qty * effectivePrice)
@@ -107,6 +118,7 @@ export const cartSlice = createSlice({
           addedAt: new Date().toISOString()
         };
         
+        console.log("Cart Slice - Created cart item with effectivePrice:", cartItem.effectivePrice);
         state.items.push(cartItem);
       } else {
         // Update existing item quantity
@@ -164,10 +176,6 @@ export const cartSlice = createSlice({
     updatePricingContext: (state, action) => {
       const { isBusinessUser } = action.payload;
       
-      // Create a map to track which items need to be merged
-      const itemsToUpdate = [];
-      const itemsToRemove = [];
-      
       state.items.forEach((item, index) => {
         // Update the business user context
         const oldUniqueKey = item.uniqueKey;
@@ -186,6 +194,7 @@ export const cartSlice = createSlice({
         item.isBusinessUser = isBusinessUser;
         item.pricingContext = isBusinessUser ? 'business' : 'regular';
         item.effectivePrice = newEffectivePrice;
+        item.unitPrice = newEffectivePrice; // Update unitPrice for display
         item.sum = item.qty * newEffectivePrice;
         
         // Update unique key to reflect new pricing context
@@ -257,52 +266,3 @@ export const selectCartSubtotal = (state) => state.cart.total;
 export const selectCartTotalWithShipping = (state) => state.cart.total + state.cart.shippingCost;
 export const selectShippingCost = (state) => state.cart.shippingCost;
 export const selectDiscount = (state) => state.cart.discount;
-
-// Get final total with shipping and discount
-export const selectCartFinalTotal = (state) => {
-  const subtotal = state.cart.total;
-  const shipping = state.cart.shippingCost;
-  const discount = state.cart.discount;
-  
-  let total = subtotal + shipping;
-  
-  if (discount) {
-    if (discount.percentage) {
-      total = total - (total * discount.percentage / 100);
-    } else if (discount.amount) {
-      total = Math.max(0, total - discount.amount);
-    }
-  }
-  
-  return total;
-};
-
-// Helper function to get cart item count for a specific product
-export const selectProductCartQuantity = (productId, selectedColorId = null, isBusinessUser = false) => (state) => {
-  const baseKey = `${productId}-bottle`; // Assuming bottle as default
-  const colorKey = selectedColorId ? `-${selectedColorId.replace(/\s+/g, '-').toLowerCase()}` : '';
-  const businessKey = isBusinessUser ? '-business' : '-regular';
-  const uniqueKey = `${baseKey}${colorKey}${businessKey}`;
-  
-  const item = state.cart.items.find(item => item.uniqueKey === uniqueKey);
-  return item ? item.qty : 0;
-};
-
-// Get business vs regular pricing breakdown
-export const selectCartPricingBreakdown = (state) => {
-  const businessItems = state.cart.items.filter(item => item.pricingContext === 'business');
-  const regularItems = state.cart.items.filter(item => item.pricingContext === 'regular');
-  
-  return {
-    businessTotal: businessItems.reduce((total, item) => total + item.sum, 0),
-    regularTotal: regularItems.reduce((total, item) => total + item.sum, 0),
-    businessItemCount: businessItems.length,
-    regularItemCount: regularItems.length,
-    totalSavings: businessItems.reduce((savings, item) => {
-      if (item.price && item.business_price) {
-        return savings + ((item.price - item.business_price) * item.qty);
-      }
-      return savings;
-    }, 0)
-  };
-};

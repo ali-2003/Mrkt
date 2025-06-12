@@ -30,6 +30,9 @@ function CartPageComponent() {
   const cart = useSelector((state) => state.cart);
   const { items, discount } = cart;
 
+  // Check if user is business account (FIXED: use accountType)
+  const isBusinessUser = session?.user?.accountType === 'business';
+
   // Enhanced function to get the correct cart image
   const getCartImage = (item) => {
     // Priority: cartImage > selectedColor first image > regular pictures
@@ -55,7 +58,39 @@ function CartPageComponent() {
 
   // Get base product name without color
   const getBaseProductName = (item) => {
-    return item.originalProduct?.name || item.name;
+    return item.originalProduct?.name || item.originalName || item.name;
+  };
+
+  // CRITICAL FIX: Get the actual price that was stored when item was added to cart
+  const getStoredItemPrice = (item) => {
+    console.log("Getting price for:", item.name, {
+      effectivePrice: item.effectivePrice,
+      unitPrice: item.unitPrice,
+      isBusinessUser: item.isBusinessUser,
+      business_price: item.business_price,
+      sale_price: item.sale_price,
+      price: item.price
+    });
+
+    // Priority order for getting the correct stored price
+    if (item.effectivePrice) {
+      return item.effectivePrice;
+    }
+    
+    if (item.unitPrice) {
+      return item.unitPrice;
+    }
+
+    // Fallback: recalculate based on stored context
+    if (item.isBusinessUser && item.business_price) {
+      return item.business_price;
+    }
+    
+    if (item.sale_price && !item.isBusinessUser) {
+      return item.sale_price;
+    }
+    
+    return item.price || 0;
   };
 
   // Function to get user data
@@ -78,7 +113,7 @@ function CartPageComponent() {
     }
   };
 
-  // Function to calculate the subtotal
+  // Function to calculate the subtotal using stored prices
   const calculateSubtotal = () => {
     if (!items || !Array.isArray(items) || items.length === 0) return 0;
     
@@ -86,11 +121,11 @@ function CartPageComponent() {
       if (item && typeof item.sum === 'number') {
         return total + item.sum;
       }
-      // Fallback calculation if sum is not available
+      // Fallback calculation using stored price
       if (item) {
-        const price = item.sale_price || item.price || 0;
+        const storedPrice = getStoredItemPrice(item);
         const qty = item.qty || 1;
-        return total + (price * qty);
+        return total + (storedPrice * qty);
       }
       return total;
     }, 0);
@@ -103,17 +138,21 @@ function CartPageComponent() {
       .reduce((count, item) => count + (item.qty || 1), 0);
   };
 
-  // Function to calculate total for a product type
+  // Function to calculate total for a product type using stored prices
   const getProductTypeTotal = (items, productType) => {
     if (!items || !Array.isArray(items)) return 0;
     return items
       .filter(item => item?.productType === productType)
-      .reduce((total, item) => total + (item.sum || 0), 0);
+      .reduce((total, item) => {
+        // Use the stored sum or calculate from stored price
+        if (item.sum) return total + item.sum;
+        return total + (getStoredItemPrice(item) * (item.qty || 1));
+      }, 0);
   };
 
-  // Function to check if discounts are eligible
+  // Function to check if discounts are eligible (FIXED: use accountType)
   const isEligibleForDiscounts = () => {
-    return !session || session?.user?.type !== 'business';
+    return !session || session?.user?.accountType !== 'business';
   };
 
   // Check if cart has pod devices
@@ -131,29 +170,19 @@ function CartPageComponent() {
     if (!cartItems || cartItems.length === 0) return null;
 
     try {
-      // Ensure all items have necessary properties
+      // Ensure all items have necessary properties using stored prices
       const validItems = cartItems.map(item => ({
         ...item,
         qty: item.qty || 1,
-        sum: typeof item.sum === 'number' ? item.sum : (item.sale_price || item.price || 0) * (item.qty || 1),
+        sum: typeof item.sum === 'number' ? item.sum : (getStoredItemPrice(item) * (item.qty || 1)),
         productType: item.productType
       }));
 
-      // Calculate base subtotal
+      // Calculate base subtotal using stored prices
       const subtotal = validItems.reduce((total, item) => total + item.sum, 0);
 
-      // For debugging:
-      console.log("Cart items:", validItems.map(item => ({
-        name: item.name,
-        productType: item.productType,
-        qty: item.qty,
-        sum: item.sum,
-        selectedColor: item.selectedColor?.colorName
-      })));
-      
       // If there's a manual discount, apply it
       if (manualDiscount && manualDiscount.percentage) {
-        console.log("Applying manual discount:", manualDiscount);
         const discountAmount = subtotal * (manualDiscount.percentage / 100);
         return {
           original: subtotal,
@@ -172,10 +201,6 @@ function CartPageComponent() {
       const bottleCount = countProductTypes(validItems, 'bottle');
       const hasPodDevice = countProductTypes(validItems, 'pod') > 0;
       const bottleTotal = getProductTypeTotal(validItems, 'bottle');
-      
-      console.log("Bottle count:", bottleCount);
-      console.log("Has pods:", hasPodDevice);
-      console.log("Bottle total:", bottleTotal);
 
       // Initialize best discount
       let bestDiscount = {
@@ -183,17 +208,12 @@ function CartPageComponent() {
         details: null
       };
 
-      // Otherwise check for automatic discounts
       // Get user data if logged in
       const userDataObj = await getUserData();
       
-      // IMPORTANT: For testing purposes, let's check ALL potential discounts
-      // and apply the best one, rather than having a fixed precedence
-
       // Check for first order discount (logged in users only)
       if (session?.user && userDataObj?.orderCount === 0) {
         const discountAmount = subtotal * 0.2; // 20% first order discount
-        console.log("First order discount possible:", discountAmount);
         
         if (discountAmount > bestDiscount.amount) {
           bestDiscount = {
@@ -214,7 +234,6 @@ function CartPageComponent() {
         // Pod + 3+ bottles: 50% off bottles
         if (hasPodDevice && bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.5;
-          console.log("Pod + 3+ bottles discount possible:", discountAmount);
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
@@ -232,7 +251,6 @@ function CartPageComponent() {
         // Pod + 1-2 bottles: 30% off bottles
         else if (hasPodDevice && bottleCount > 0) {
           const discountAmount = bottleTotal * 0.3;
-          console.log("Pod + 1-2 bottles discount possible:", discountAmount);
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
@@ -250,7 +268,6 @@ function CartPageComponent() {
         // 5+ bottles: 30% off
         else if (bottleCount >= 5) {
           const discountAmount = bottleTotal * 0.3;
-          console.log("5+ bottles discount possible:", discountAmount);
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
@@ -268,7 +285,6 @@ function CartPageComponent() {
         // 3-4 bottles: 20% off
         else if (bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.2;
-          console.log("3-4 bottles discount possible:", discountAmount);
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
@@ -284,8 +300,6 @@ function CartPageComponent() {
           }
         }
       }
-
-      console.log("Best discount selected:", bestDiscount);
 
       // Apply the best discount if any
       if (bestDiscount.amount > 0 && bestDiscount.details) {
@@ -330,15 +344,14 @@ function CartPageComponent() {
     // Set loading state to prevent unnecessary recalculations
     setLoading(true);
 
-    // Calculate discount - key change here is to pass the discount directly
+    // Calculate discount using stored prices
     calculateDiscount(items, discount)
       .then(calculation => {
-        console.log("Setting cart calculation:", calculation);
         setCartCalculation(calculation);
       })
       .catch(error => {
         console.error("Error calculating discount:", error);
-        // Fallback to basic calculation
+        // Fallback to basic calculation using stored prices
         const subtotal = calculateSubtotal();
         setCartCalculation({
           original: subtotal,
@@ -351,9 +364,9 @@ function CartPageComponent() {
         setLoading(false);
       });
 
-  }, [items, session?.user, discount]); // Include discount in dependencies
+  }, [items, session?.user, discount]);
 
-  // FIX: Use a simpler mechanism for user data loading
+  // User data loading
   useEffect(() => {
     if (session?.user) {
       getUserData().then(data => setUserData(data));
@@ -385,23 +398,20 @@ function CartPageComponent() {
 
       // For testing - apply a hard-coded discount
       if (code === "TEST") {
-        console.log("Applying test discount");
         const testDiscount = {
           code: "TEST",
           name: "Test Discount",
-          percentage: 25, // 25% off for test
+          percentage: 25,
           type: "test"
         };
         
-        // Apply to Redux
         dispatch(applyDiscount(testDiscount));
-        
         toast.success("Test discount applied!");
         setCode("");
         return;
       }
 
-      // First check for discount codes in the database
+      // Check for discount codes in the database
       const res = await client.fetch(`*[_type == 'discount' && code=='${code}' && (email == '${session?.user?.email}' || email == null)] {
         ...
       }`);
@@ -411,18 +421,15 @@ function CartPageComponent() {
         const referralCheck = await client.fetch(`*[_type == 'user' && referralCode=='${code}' && email != '${session?.user?.email}'][0]`);
         
         if (referralCheck) {
-          // Create a referral discount object
           const referralDiscount = {
             code: code,
             name: "Referral Discount",
-            percentage: 40, // 40% off for referrals
+            percentage: 40,
             type: "referral",
             email: referralCheck.email
           };
           
-          // Apply to Redux
           dispatch(applyDiscount(referralDiscount));
-          
           toast.success("Referral discount applied!");
           setCode("");
           return;
@@ -434,7 +441,6 @@ function CartPageComponent() {
 
       // Apply database discount to Redux
       dispatch(applyDiscount(res[0]));
-      
       toast.success("Discount applied!");
     } catch (err) {
       console.error("Error applying discount:", err);
@@ -457,39 +463,26 @@ function CartPageComponent() {
     }, 400);
   }
 
-  // Handle checkout - Updated to redirect to checkout page
+  // Handle checkout
   const handleCheckout = (e) => {
     e.preventDefault();
     
-    console.log("=== CHECKOUT DEBUG START ===");
-    console.log("Session exists:", !!session);
-    console.log("Items count:", items?.length);
-    console.log("Current pathname:", window.location.pathname);
-    
     if (!session) {
-      console.log("No session, redirecting to login");
       router.push("/auth/masuk");
       return;
     }
     
     if (items?.length < 1) {
-      console.log("No items in cart");
       toast.error("No products in the cart");
       return;
     }
 
-    console.log("About to redirect to /checkout");
-    
     try {
       router.push("/checkout");
-      console.log("Router.push to /checkout called successfully");
     } catch (error) {
       console.error("Router.push failed:", error);
-      // Fallback to window.location
       window.location.href = "/checkout";
     }
-    
-    console.log("=== CHECKOUT DEBUG END ===");
   };
 
   // Format price with locale
@@ -498,14 +491,6 @@ function CartPageComponent() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     });
-  };
-
-  // Calculate final price for display
-  const getItemPrice = (item) => {
-    if (session && session?.user?.type === 'business') {
-      return item?.business_price || item.price;
-    }
-    return item.sale_price || item.price;
   };
 
   // Handle removing a discount
@@ -614,6 +599,18 @@ function CartPageComponent() {
                                   </div>
                                 )}
 
+                                {/* Business pricing indicator */}
+                                {item.isBusinessUser && (
+                                  <div className="business-price-info" style={{
+                                    fontSize: '12px',
+                                    color: '#667eea',
+                                    marginTop: '4px',
+                                    fontWeight: '500'
+                                  }}>
+                                    Business Price Applied
+                                  </div>
+                                )}
+
                                 {/* Stock info for colored products */}
                                 {item.selectedColor?.stock && (
                                   <div className="stock-info" style={{
@@ -632,7 +629,8 @@ function CartPageComponent() {
                           </td>
 
                           <td className="price-col">
-                            Rp {formatPrice(getItemPrice(item))}
+                            {/* CRITICAL FIX: Use stored price */}
+                            Rp {formatPrice(getStoredItemPrice(item))}
                           </td>
 
                           <td className="quantity-col">
@@ -783,12 +781,7 @@ function CartPageComponent() {
                       className="btn btn-outline-primary-2 btn-order btn-block"
                       type="button"
                       disabled={items.length < 1}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log("Checkout button clicked!");
-                        handleCheckout(e);
-                      }}
+                      onClick={handleCheckout}
                     >
                       PROCEED TO CHECKOUT
                     </button>

@@ -1,10 +1,10 @@
 "use client";
-
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Play, ChevronLeft, ChevronRight, Star, Check, Info } from "lucide-react";
 import { PortableText } from '@portabletext/react';
+import { useSession } from "next-auth/react";
 
 function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device" }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -12,13 +12,43 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
   const [showVideo, setShowVideo] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
+  // ADD SESSION HANDLING FOR BUSINESS PRICING
+  const { data: session } = useSession();
+  const isBusinessUser = session?.user?.accountType === 'business';
+
+  // BUSINESS PRICING FUNCTIONS
+  const getDisplayPrice = () => {
+    if (isBusinessUser && deviceData?.business_price) {
+      return deviceData.business_price;
+    }
+    if (deviceData?.sale_price && !isBusinessUser) {
+      return deviceData.sale_price;
+    }
+    return deviceData?.price || 299000;
+  };
+
+  const getOriginalPrice = () => {
+    return deviceData?.price || deviceData?.originalPrice || 399000;
+  };
+
+  const shouldShowSalePrice = () => {
+    return deviceData?.sale_price && !isBusinessUser && deviceData.sale_price < deviceData.price;
+  };
+
+  const shouldShowBusinessPrice = () => {
+    return isBusinessUser && deviceData?.business_price && deviceData.business_price !== deviceData.price;
+  };
+
+  const formatPrice = (price) => {
+    return `Rp ${price.toLocaleString('id-ID')}`;
+  };
+
   // Helper function to format review date
   const formatReviewDate = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now - date);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
     if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
@@ -70,7 +100,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
         title: "Product Overview"
       },
       {
-        thumbnail: "/api/placeholder/400/300", 
+        thumbnail: "/api/placeholder/400/300",
         videoUrl: "https://example.com/video2.mp4",
         title: "How to Use"
       }
@@ -88,7 +118,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
       },
       {
         icon: "🎨",
-        title: "Sleek Design", 
+        title: "Sleek Design",
         description: "Premium materials with ergonomic grip and modern aesthetics"
       },
       {
@@ -111,8 +141,10 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
       { name: "Rose Gold", color: "#E8B4CB", image: "/api/placeholder/100/100" },
       { name: "Ocean Blue", color: "#006994", image: "/api/placeholder/100/100" }
     ],
-    price: 299,
-    originalPrice: 399,
+    price: 299000,
+    sale_price: null,
+    business_price: null,
+    originalPrice: 399000,
     rating: 4.8,
     reviews: [],
     totalReviews: 1247,
@@ -126,26 +158,24 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
   const reviewsArray = getReviewsArray();
 
   const nextImage = () => {
-    setActiveImageIndex((prev) => 
+    setActiveImageIndex((prev) =>
       prev === (deviceData.gallery?.length - 1 || 0) ? 0 : prev + 1
     );
   };
 
   const prevImage = () => {
-    setActiveImageIndex((prev) => 
+    setActiveImageIndex((prev) =>
       prev === 0 ? (deviceData.gallery?.length - 1 || 0) : prev - 1
     );
   };
-  
+
   // Helper function to render rich text or fallback to string
   const renderDescription = (description) => {
     if (!description) return null;
-    
     // If it's an array (rich text from Sanity), render with PortableText
     if (Array.isArray(description)) {
       return <PortableText value={description} />;
     }
-    
     // If it's a string, render normally
     return <p className="text-gray-700">{description}</p>;
   };
@@ -155,8 +185,8 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
       <Star
         key={i}
         className={`w-4 h-4 ${
-          i < Math.floor(rating) 
-            ? 'fill-yellow-400 text-yellow-400' 
+          i < Math.floor(rating)
+            ? 'fill-yellow-400 text-yellow-400'
             : 'text-gray-300'
         }`}
       />
@@ -187,18 +217,45 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
             <div className="col-lg-6">
               <h1 className="text-5xl font-bold mb-4 text-white">{deviceData.name}</h1>
               <p className="text-xl mb-6 text-gray-300">{deviceData.tagline}</p>
+              
+              {/* BUSINESS USER INDICATOR */}
+              {isBusinessUser && deviceData?.business_price && (
+                <div className="business-pricing-banner mb-4">
+                  <span className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                    💼 Business Pricing Applied
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex items-center gap-2">
                   <div className="flex">{renderStars(averageRating)}</div>
                   <span className="text-sm">({totalReviewCount} reviews)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl font-bold text-green-400">
-                    Rp {deviceData.price?.toLocaleString() || '299,000'}
-                  </span>
-                  {deviceData.originalPrice && (
-                    <span className="text-lg line-through text-gray-400">
-                      Rp {deviceData.originalPrice.toLocaleString()}
+                  {/* UPDATED PRICE DISPLAY WITH BUSINESS PRICING */}
+                  {shouldShowSalePrice() || shouldShowBusinessPrice() ? (
+                    <>
+                      <span className="text-2xl font-bold text-green-400">
+                        {formatPrice(getDisplayPrice())}
+                      </span>
+                      <span className="text-lg line-through text-gray-400">
+                        {formatPrice(getOriginalPrice())}
+                      </span>
+                      {isBusinessUser && (
+                        <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full">
+                          Business
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-2xl font-bold text-green-400">
+                      {formatPrice(getDisplayPrice())}
+                      {isBusinessUser && deviceData?.business_price && (
+                        <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full ml-2">
+                          Business
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>
@@ -235,7 +292,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                   </>
                 )}
               </div>
-              
               {/* Image Thumbnails */}
               {deviceData.gallery && deviceData.gallery.length > 1 && (
                 <div className="flex gap-2 mt-4 justify-center">
@@ -263,8 +319,8 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
         </div>
       </section>
 
-     {/* Video Section */}
-     {deviceData.videos && deviceData.videos.length > 0 && (
+      {/* Video Section */}
+      {deviceData.videos && deviceData.videos.length > 0 && (
         <section className="video-section py-16 bg-gray-50">
           <div className="container">
             <h2 className="text-3xl font-bold text-center mb-12">Lihat Dalam Aksi</h2>
@@ -305,7 +361,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                           <span className="text-white text-lg">Video tidak tersedia</span>
                         </div>
                       )}
-                      
                       {video.title && (
                         <div className="absolute bottom-4 left-4 text-white bg-black/50 px-3 py-1 rounded">
                           <h3 className="text-lg font-semibold">{video.title}</h3>
@@ -327,7 +382,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
             <h2 className="text-3xl font-bold text-center mb-12">Fitur Utama</h2>
             <div className="flex justify-center">
               <div className={`grid gap-8 ${
-                deviceData.features.length === 1 ? 'grid-cols-1 max-w-sm' : 
+                deviceData.features.length === 1 ? 'grid-cols-1 max-w-sm' :
                 deviceData.features.length === 2 ? 'grid-cols-1 md:grid-cols-2 max-w-2xl' :
                 deviceData.features.length === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 max-w-4xl' :
                 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'
@@ -354,7 +409,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
             <h2 className="text-3xl font-bold text-center mb-12">Warna yang Tersedia</h2>
             <div className="flex justify-center">
               <div className={`flex gap-6 flex-wrap justify-center ${
-                deviceData.colors.length === 1 ? 'max-w-xs' : 
+                deviceData.colors.length === 1 ? 'max-w-xs' :
                 deviceData.colors.length === 2 ? 'max-w-md' :
                 deviceData.colors.length === 3 ? 'max-w-lg' :
                 'max-w-2xl'
@@ -369,7 +424,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                         height={100}
                         className="w-24 h-24 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow"
                       />
-                      <div 
+                      <div
                         className="absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white shadow-md"
                         style={{ backgroundColor: color.color }}
                       ></div>
@@ -415,7 +470,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                   <h3 className="text-2xl font-bold mb-4">Product Overview</h3>
                   <p className="text-lg mb-6">{deviceData.description}</p>
                   {renderDescription(deviceData.detailedDescription)}
-                  
                   <div className="grid md:grid-cols-2 gap-8 mt-8">
                     <div>
                       <h4 className="text-xl font-semibold mb-4">What's Included</h4>
@@ -447,7 +501,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                         )}
                       </ul>
                     </div>
-                    
                     <div>
                       <h4 className="text-xl font-semibold mb-4">Safety Information</h4>
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -525,7 +578,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                         <p className="text-gray-600">Based on {totalReviewCount} reviews</p>
                       </div>
                     </div>
-                    
                     {/* Rating Breakdown */}
                     {reviewsArray.length > 0 && (
                       <div className="mt-4">
@@ -537,7 +589,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                             <div key={star} className="flex items-center gap-2 mb-1">
                               <span className="text-sm w-8">{star}★</span>
                               <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                <div 
+                                <div
                                   className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
                                   style={{ width: `${percentage}%` }}
                                 ></div>
@@ -549,7 +601,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Reviews List */}
                   <div className="space-y-6">
                     {reviewsArray.length > 0 ? (
@@ -582,8 +634,8 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                             {review.wouldRecommend !== undefined && (
                               <div className="text-right">
                                 <span className={`text-xs px-2 py-1 rounded ${
-                                  review.wouldRecommend 
-                                    ? 'bg-green-100 text-green-800' 
+                                  review.wouldRecommend
+                                    ? 'bg-green-100 text-green-800'
                                     : 'bg-red-100 text-red-800'
                                 }`}>
                                   {review.wouldRecommend ? '👍 Recommends' : '👎 Doesn\'t recommend'}
@@ -591,13 +643,10 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                               </div>
                             )}
                           </div>
-                          
                           {review.title && (
                             <h4 className="font-semibold text-gray-900 mb-2">{review.title}</h4>
                           )}
-                          
                           <p className="text-gray-700 mb-4">{review.comment || 'No comment provided'}</p>
-                          
                           {/* Pros and Cons */}
                           {(review.pros?.length > 0 || review.cons?.length > 0) && (
                             <div className="grid md:grid-cols-2 gap-4 mb-4">
@@ -614,7 +663,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                                   </ul>
                                 </div>
                               )}
-                              
                               {review.cons?.length > 0 && (
                                 <div>
                                   <h5 className="text-sm font-medium text-red-700 mb-2">👎 Cons:</h5>
@@ -630,7 +678,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                               )}
                             </div>
                           )}
-                          
                           {/* Review Images */}
                           {review.reviewImages?.length > 0 && (
                             <div className="mb-4">
@@ -649,7 +696,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                               </div>
                             </div>
                           )}
-                          
                           {/* Helpful Counter */}
                           {review.helpful > 0 && (
                             <div className="text-sm text-gray-500">
@@ -688,15 +734,48 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
         <div className="container text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to Experience Premium Vaping?</h2>
           <p className="text-2xl mb-8 opacity-90 text-white">Join thousands of satisfied customers</p>
+          
+          {/* BUSINESS PRICING INDICATOR IN CTA */}
+          {isBusinessUser && deviceData?.business_price && (
+            <div className="mb-6">
+              <span className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm font-semibold">
+                💼 Special Business Pricing Available
+              </span>
+            </div>
+          )}
+
           <div className="flex justify-center gap-4 flex-wrap">
             <Link href={`/produk/${deviceData.slug?.current || deviceData.slug}`}>
               <button className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
-                See Product Details - Rp {deviceData.price?.toLocaleString() || '299,000'}
+                {/* UPDATED CTA PRICE WITH BUSINESS PRICING */}
+                See Product Details - {formatPrice(getDisplayPrice())}
+                {isBusinessUser && deviceData?.business_price && (
+                  <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full ml-2">
+                    Business
+                  </span>
+                )}
               </button>
             </Link>
           </div>
         </div>
       </section>
+
+      <style jsx>{`
+        .business-pricing-banner {
+          animation: fadeInUp 0.5s ease-out;
+        }
+        
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </main>
   );
 }

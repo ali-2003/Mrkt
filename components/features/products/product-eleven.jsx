@@ -1,374 +1,241 @@
-"use client";
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { useState } from "react";
+import { isInWishlist, isInCompare } from "@/utils";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { useDispatch } from "react-redux";
+import Image from "next/image";
+import urlFor from "@/sanity/lib/image";
+import { useDispatch, useSelector } from "react-redux";
 import { addToCart } from "@/redux/slice/cartSlice";
 import { toast } from "react-toastify";
-
-// Import the price utility functions
-import { getPriceDisplayInfo, isBusinessUser } from "@/utils/priceUtils";
+import { nicotinePercentage } from "@/utils/constants";
+import { addToWishlist } from "@/redux/slice/wishlistSlice";
+import { useSession } from "next-auth/react";
 
 function ProductEleven({ product }) {
-  const { data: session } = useSession();
+  const router = useRouter();
   const dispatch = useDispatch();
-  
-  // Get price display information
-  const priceInfo = getPriceDisplayInfo(product, session);
-  const isBusiness = isBusinessUser(session);
+  const wishlist = useSelector((state) => state.wishlist.items);
+  const { data: session } = useSession();
 
-  // Handle quick add to cart
-  function handleQuickAddToCart(e) {
+  // Check if user is business account (corrected field name)
+  const isBusinessUser = session?.user?.accountType === 'business';
+
+  // Function to get the appropriate price based on user type
+  function getDisplayPrice() {
+    if (isBusinessUser && product?.business_price) {
+      return product.business_price;
+    }
+    if (product?.sale_price && !isBusinessUser) {
+      return product.sale_price;
+    }
+    return product?.price || 0;
+  }
+
+  // Function to check if we should show sale price styling
+  function shouldShowSalePrice() {
+    return product?.sale_price && !isBusinessUser && product.sale_price < product.price;
+  }
+
+  // Function to format price consistently
+  function formatPrice(price) {
+    return `Rp ${price.toLocaleString('id-ID')}`;
+  }
+
+  function onCartClick(e) {
     e.preventDefault();
-    e.stopPropagation();
-    
-    if (!product?.stock || product.stock < 1) {
-      toast.error("Product out of stock");
-      return;
-    }
 
-    // For pod products, we can't quick add without color selection
-    if (product?.productType === 'pod') {
-      toast.info("Please visit product page to select color");
-      return;
-    }
-
-    // Add product with appropriate price
-    const productToAdd = {
+    // Add business pricing context to cart item
+    const cartItem = {
       ...product,
-      displayPrice: priceInfo.displayPrice,
-      isBusinessUser: isBusiness
+      displayPrice: getDisplayPrice(),
+      isBusinessUser: isBusinessUser,
+      addedAsBusinessUser: isBusinessUser
     };
 
-    dispatch(addToCart(productToAdd));
+    dispatch(addToCart(cartItem));
     toast.success("Product added to cart");
   }
 
-  // Get the main product image
-  function getProductImage() {
-    if (product?.productType === 'pod' && product?.podColors?.length > 0) {
-      // For pods, use the first available color's first image
-      const firstColor = product.podColors.find(color => color.isAvailable) || product.podColors[0];
-      return firstColor?.pictures?.[0] || product?.pictures?.[0];
+  function onWishlistClick(e) {
+    e.preventDefault();
+    if (!isInWishlist(wishlist, product)) {
+      dispatch(addToWishlist(product));
+    } else {
+      router.push("favorit");
     }
-    return product?.pictures?.[0];
   }
 
-  // Check if product is in stock
-  function isInStock() {
-    if (product?.productType === 'pod') {
-      return product?.podColors?.some(color => color.isAvailable && color.stock > 0);
+  function onCompareClick(e) {
+    e.preventDefault();
+    if (!isInCompare(props.comparelist, product)) {
+      props.addToCompare(product);
     }
-    return product?.stock > 0;
   }
 
-  const productImage = getProductImage();
-  const inStock = isInStock();
+  function onQuickView(e) {
+    e.preventDefault();
+    props.showQuickView(product.slug.current);
+  }
 
   return (
-    <div className="product product-11 text-center">
+    <div className="product product-7 text-center w-100">
       <figure className="product-media">
-        <Link href={`/products/${product.slug?.current || product.id}`}>
-          <img
-            src={productImage?.asset?.url || '/images/placeholder.jpg'}
-            alt={product.name}
-            className="product-image"
-          />
-        </Link>
-
-        {/* Product badges */}
-        <div className="product-badges">
-          {product?.hot && <span className="product-badge badge-hot">Hot</span>}
-          {product?.featured && <span className="product-badge badge-featured">Featured</span>}
-          {!inStock && <span className="product-badge badge-out-of-stock">Out of Stock</span>}
-          {isBusiness && product?.business_price && (
-            <span className="product-badge badge-business">Business Price</span>
-          )}
-        </div>
-
-        {/* Quick actions */}
-        <div className="product-action">
-          {inStock && product?.productType !== 'pod' ? (
-            <button 
-              className="btn-product btn-cart" 
-              onClick={handleQuickAddToCart}
-              title="Add to cart"
-            >
-              <span>Quick Add</span>
-            </button>
-          ) : (
-            <Link 
-              href={`/products/${product.slug?.current || product.id}`}
-              className="btn-product btn-cart"
-            >
-              <span>View Product</span>
-            </Link>
-          )}
-        </div>
-      </figure>
-
-      <div className="product-body">
-        <div className="product-cat">
-          <span className="product-category">{product?.productType || 'Product'}</span>
-        </div>
-
-        <h3 className="product-title">
-          <Link href={`/products/${product.slug?.current || product.id}`}>
-            {product.name}
-          </Link>
-        </h3>
-
-        {/* Ratings */}
-        {product?.ratings && (
-          <div className="ratings-container">
-            <div className="ratings">
-              <div
-                className="ratings-val"
-                style={{ width: `${product.ratings * 20}%` }}
-              ></div>
-            </div>
-            <span className="ratings-text">({product.ratings.toFixed(1)})</span>
-          </div>
+        {product?.hot ? (
+          <span className="product-label label-new">Hot</span>
+        ) : (
+          ""
         )}
 
-        {/* Price Display */}
-        <div className="product-price">
-          {!inStock ? (
-            <span className="out-price">{priceInfo.formattedDisplayPrice}</span>
-          ) : priceInfo.showSalePrice ? (
-            <>
-              <span className="old-price">{priceInfo.formattedOriginalPrice}</span>
-              <span className="new-price">{priceInfo.formattedDisplayPrice}</span>
-            </>
-          ) : (
-            <span className="price">
-              {priceInfo.formattedDisplayPrice}
-              {priceInfo.isUsingBusinessPrice && (
-                <small className="business-indicator"> (Business)</small>
-              )}
-            </span>
-          )}
-        </div>
+        {product?.sale_price && !isBusinessUser ? (
+          <span className="product-label label-sale">Promo</span>
+        ) : (
+          ""
+        )}
 
-        {/* Stock indicator for pods */}
-        {product?.productType === 'pod' && (
-          <div className="color-stock-info">
-            <small className="text-muted">
-              {product.podColors?.filter(c => c.isAvailable && c.stock > 0).length || 0} colors available
-            </small>
+        {/* Business user indicator */}
+        {isBusinessUser && product?.business_price ? (
+          <span className="product-label label-business">Business</span>
+        ) : (
+          ""
+        )}
+
+        {product?.featured ? (
+          <span className="product-label label-top">Viral</span>
+        ) : (
+          ""
+        )}
+
+        {!product?.stock || product?.stock == 0 ? (
+          <span className="product-label label-out">Out of Stock</span>
+        ) : (
+          ""
+        )}
+
+        <Link href={`/produk/${product.slug.current}`}>
+          <Image
+            alt="product"
+            src={urlFor(product.pictures?.[0])?.url()}
+            fill
+            className="product-image"
+          />
+          {product?.pictures?.length >= 2 ? (
+            <Image
+              alt="product"
+              src={urlFor(product.pictures?.[1])?.url()}
+              fill
+              className="product-image-hover"
+            />
+          ) : (
+            ""
+          )}
+        </Link>
+
+        {product?.stock > 0 ? (
+          <div className="product-action-vertical">
+            {isInWishlist(wishlist, product) ? (
+              <Link
+                href="/favorit"
+                className="btn-product-icon btn-wishlist btn-expandable added-to-wishlist"
+              >
+                <span>go to wishlist</span>
+              </Link>
+            ) : (
+              <a
+                href="#"
+                className="btn-product-icon btn-wishlist btn-expandable"
+                onClick={onWishlistClick}
+              >
+                <span>add to wishlist</span>
+              </a>
+            )}
           </div>
+        ) : (
+          <div className="product-action-vertical">
+            {isInWishlist(wishlist, product) ? (
+              <Link
+                href="/favorit"
+                className="btn-product-icon btn-wishlist btn-expandable added-to-wishlist"
+              >
+                <span>go to wishlist</span>
+              </Link>
+            ) : (
+              <a
+                href="#"
+                className="btn-product-icon btn-wishlist btn-expandable"
+                onClick={onWishlistClick}
+              >
+                <span>add to wishlist</span>
+              </a>
+            )}
+          </div>
+        )}
+      </figure>
+
+      <h3 className="product-title pt-3">
+        <Link href={`/produk/${product.slug.current}`}>{product.name}</Link>
+      </h3>
+
+      {/* Updated Price Display Logic */}
+      {product?.stock < 1 ? (
+        <div className="product-price">
+          <span className="out-price">{formatPrice(getDisplayPrice())}</span>
+        </div>
+      ) : shouldShowSalePrice() ? (
+        <div className="product-price">
+          <span className="old-price pr-2">{formatPrice(product.price)}</span>
+          <span className="new-price">{formatPrice(getDisplayPrice())}</span>
+        </div>
+      ) : (
+        <div className="product-price">
+          <span className="out-price">
+            {formatPrice(getDisplayPrice())}
+            {isBusinessUser && product?.business_price && (
+              <small className="business-indicator"> (Business)</small>
+            )}
+          </span>
+        </div>
+      )}
+
+      <div className="ratings-container pb-2">
+        <div className="ratings">
+          <div
+            className="ratings-val"
+            style={{ width: product?.ratings * 20 + "%" }}
+          ></div>
+          <span className="tooltip-text">{product?.ratings.toFixed(2)}</span>
+        </div>
+        {product?.reviews?.length && (
+          <span className="ratings-text">( {product?.reviews?.length} Reviews )</span>
         )}
       </div>
 
       <style jsx>{`
-        .product {
-          position: relative;
-          background: white;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .product:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-        }
-
-        .product-media {
-          position: relative;
-          margin: 0;
-          overflow: hidden;
-        }
-
-        .product-image {
-          width: 100%;
-          height: 200px;
-          object-fit: cover;
-          transition: transform 0.3s ease;
-        }
-
-        .product:hover .product-image {
-          transform: scale(1.05);
-        }
-
-        .product-badges {
-          position: absolute;
-          top: 10px;
-          left: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-
-        .product-badge {
-          padding: 4px 8px;
-          font-size: 10px;
-          font-weight: 600;
-          text-transform: uppercase;
-          border-radius: 12px;
-          color: white;
-        }
-
-        .badge-hot {
-          background: linear-gradient(135deg, #ff6b6b, #ee5a24);
-        }
-
-        .badge-featured {
-          background: linear-gradient(135deg, #feca57, #ff9ff3);
-        }
-
-        .badge-out-of-stock {
-          background: linear-gradient(135deg, #666, #333);
-        }
-
-        .badge-business {
-          background: linear-gradient(135deg, #667eea, #764ba2);
-        }
-
-        .product-action {
-          position: absolute;
-          bottom: 10px;
-          left: 50%;
-          transform: translateX(-50%);
-          opacity: 0;
-          transition: opacity 0.3s ease;
-        }
-
-        .product:hover .product-action {
-          opacity: 1;
-        }
-
-        .btn-product {
+        .product-label.label-business {
           background: linear-gradient(135deg, #667eea, #764ba2);
           color: white;
-          border: none;
-          padding: 8px 16px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 600;
-          text-decoration: none;
-          display: inline-block;
-          transition: all 0.3s ease;
-          cursor: pointer;
-        }
-
-        .btn-product:hover {
-          background: linear-gradient(135deg, #5a67d8, #6b46c1);
-          transform: translateY(-2px);
-        }
-
-        .product-body {
-          padding: 15px;
-        }
-
-        .product-category {
-          color: #667eea;
-          font-size: 12px;
-          font-weight: 500;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .product-title {
-          margin: 8px 0;
-          font-size: 14px;
           font-weight: 600;
         }
-
-        .product-title a {
-          color: #333;
-          text-decoration: none;
-          transition: color 0.3s ease;
-        }
-
-        .product-title a:hover {
-          color: #667eea;
-        }
-
-        .ratings-container {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          margin: 8px 0;
-        }
-
-        .ratings {
-          position: relative;
-          width: 60px;
-          height: 12px;
-          background: #e0e0e0;
-          border-radius: 6px;
-          overflow: hidden;
-        }
-
-        .ratings-val {
-          height: 100%;
-          background: linear-gradient(135deg, #feca57, #ff9ff3);
-          border-radius: 6px;
-          transition: width 0.3s ease;
-        }
-
-        .ratings-text {
-          font-size: 11px;
-          color: #666;
-        }
-
-        .product-price {
-          margin: 10px 0;
-          font-weight: 600;
-        }
-
-        .old-price {
-          color: #999;
-          text-decoration: line-through;
-          margin-right: 8px;
-          font-size: 12px;
-        }
-
-        .new-price {
-          color: #e74c3c;
-          font-size: 14px;
-        }
-
-        .price {
-          color: #333;
-          font-size: 14px;
-        }
-
-        .out-price {
-          color: #999;
-          font-size: 14px;
-        }
-
+        
         .business-indicator {
           color: #667eea;
           font-weight: 500;
-          font-size: 10px;
+          font-size: 0.8em;
         }
-
-        .color-stock-info {
-          margin-top: 8px;
+        
+        .old-price {
+          text-decoration: line-through;
+          color: #999;
         }
-
-        .text-muted {
-          color: #999 !important;
+        
+        .new-price {
+          color: #e74c3c;
+          font-weight: 600;
         }
-
-        @media (max-width: 768px) {
-          .product-image {
-            height: 150px;
-          }
-          
-          .product-body {
-            padding: 10px;
-          }
-          
-          .product-title {
-            font-size: 13px;
-          }
+        
+        .out-price {
+          color: #333;
+          font-weight: 600;
         }
       `}</style>
     </div>

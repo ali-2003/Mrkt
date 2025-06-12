@@ -1,5 +1,5 @@
+// ProductThirteen.js - Updated with business pricing
 'use client'
-
 import { addToCart } from "@/redux/slice/cartSlice";
 import urlFor from "@/sanity/lib/image.js";
 import { nicotinePercentage } from "@/utils/constants";
@@ -13,10 +13,42 @@ function ProductThirteen({ product }) {
   const dispatch = useDispatch()
   const { data: session } = useSession()
 
+  // Check if user is business account (corrected field name)
+  const isBusinessUser = session?.user?.accountType === 'business';
+
+  // Function to get the appropriate price based on user type
+  function getDisplayPrice() {
+    if (isBusinessUser && product?.business_price) {
+      return product.business_price;
+    }
+    if (product?.sale_price && !isBusinessUser) {
+      return product.sale_price;
+    }
+    return product?.price || 0;
+  }
+
+  // Function to check if we should show sale price styling
+  function shouldShowSalePrice() {
+    return product?.sale_price && !isBusinessUser && product.sale_price < product.price;
+  }
+
+  // Function to format price consistently
+  function formatPrice(price) {
+    return `Rp ${price.toLocaleString('id-ID')}`;
+  }
+
   function onCartClick(e) {
     e.preventDefault();
-    
-    dispatch(addToCart(product))
+
+    // Add business pricing context to cart item
+    const cartItem = {
+      ...product,
+      displayPrice: getDisplayPrice(),
+      isBusinessUser: isBusinessUser,
+      addedAsBusinessUser: isBusinessUser
+    };
+
+    dispatch(addToCart(cartItem));
     toast.success("Item added to cart")
   }
 
@@ -42,27 +74,34 @@ function ProductThirteen({ product }) {
           )}
         </Link>
       </figure>
-
+      
       <div className="product-body">
         <h3 className="product-title">
           <Link href={`/produk/${product.slug.current}`}>{product?.name}</Link>
         </h3>
 
+        {/* Updated Price Display Logic */}
         {product?.stock < 1 ? (
           <div className="product-price">
-            <span className="out-price">Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product?.sale_price?.toFixed(2) || product.price.toFixed(2)}</span>
+            <span className="out-price">{formatPrice(getDisplayPrice())}</span>
           </div>
-        ) : product?.sale_price && (!session || session?.user?.type === 'user') ? (
+        ) : shouldShowSalePrice() ? (
           <div className="product-price">
-            <span className="old-price">Rp {product.price.toFixed(2)}</span>
-            <span className="new-price">Rp {product.sale_price.toFixed(2)}</span>
+            <span className="old-price">Rp {product.price.toLocaleString('id-ID')}</span>
+            <span className="new-price">{formatPrice(getDisplayPrice())}</span>
           </div>
         ) : (
           <div className="product-price">
-            <span className="out-price">Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product.price?.toFixed(2)}</span>
+            <span className="out-price">
+              {formatPrice(getDisplayPrice())}
+              {isBusinessUser && product?.business_price && (
+                <small className="business-indicator"> (Business)</small>
+              )}
+            </span>
           </div>
         )}
 
+        {/* Uncomment if you want to add cart button */}
         {/* {product?.stock && product?.stock !== 0 ? (
           nicotinePercentage?.length > 0 ? (
             <Link
@@ -84,6 +123,14 @@ function ProductThirteen({ product }) {
           ""
         )} */}
       </div>
+
+      <style jsx>{`
+        .business-indicator {
+          color: #667eea;
+          font-weight: 500;
+          font-size: 0.8em;
+        }
+      `}</style>
     </div>
   );
 }

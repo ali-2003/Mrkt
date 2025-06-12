@@ -1,7 +1,6 @@
 "use client"
 
 import { useRouter } from "next/navigation";
-
 import { isInWishlist, isInCompare } from "@/utils";
 import Link from "next/link";
 import Image from "next/image";
@@ -19,10 +18,42 @@ function ProductSix({ product }) {
   const wishlist = useSelector((state) => state.wishlist.items);
   const { data: session } = useSession();
 
+  // Check if user is business account (corrected field name)
+  const isBusinessUser = session?.user?.accountType === 'business';
+
+  // Function to get the appropriate price based on user type
+  function getDisplayPrice() {
+    if (isBusinessUser && product?.business_price) {
+      return product.business_price;
+    }
+    if (product?.sale_price && !isBusinessUser) {
+      return product.sale_price;
+    }
+    return product?.price || 0;
+  }
+
+  // Function to check if we should show sale price styling
+  function shouldShowSalePrice() {
+    return product?.sale_price && !isBusinessUser && product.sale_price < product.price;
+  }
+
+  // Function to format price consistently
+  function formatPrice(price) {
+    return `Rp ${price.toLocaleString('id-ID')}`;
+  }
+
   function onCartClick(e) {
     e.preventDefault();
-    
-    dispatch(addToCart(product))
+
+    // Add business pricing context to cart item
+    const cartItem = {
+      ...product,
+      displayPrice: getDisplayPrice(),
+      isBusinessUser: isBusinessUser,
+      addedAsBusinessUser: isBusinessUser
+    };
+
+    dispatch(addToCart(cartItem));
     toast.success("Product added to cart");
   }
 
@@ -56,8 +87,15 @@ function ProductSix({ product }) {
           ""
         )}
 
-        {product?.sale_price ? (
+        {product?.sale_price && !isBusinessUser ? (
           <span className="product-label label-sale">Promo</span>
+        ) : (
+          ""
+        )}
+
+        {/* Business user indicator */}
+        {isBusinessUser && product?.business_price ? (
+          <span className="product-label label-business">Business</span>
         ) : (
           ""
         )}
@@ -162,25 +200,6 @@ function ProductSix({ product }) {
             </a>
           </div>
         )}
-
-        {/* {product?.stock && product?.stock !== 0 ? (
-          <div className="product-action">
-            {nicotinePercentage?.length > 0 ? (
-              <Link
-                href={`/produk/${product.slug.current}`}
-                className="btn-product btn-cart btn-select"
-              >
-                <span>Pilih Varian</span>
-              </Link>
-            ) : (
-              <button className="btn-product btn-cart" onClick={onCartClick}>
-                <span>Keranjang</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          ""
-        )} */}
       </figure>
 
       <div className="product-body">
@@ -188,21 +207,41 @@ function ProductSix({ product }) {
           <Link href={`/produk/${product.slug.current}`}>{product.name}</Link>
         </h3>
 
+        {/* Updated Price Display Logic */}
         {product?.stock < 1 ? (
           <div className="product-price">
-            <span className="out-price">Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product?.sale_price?.toFixed(2) || product.price.toFixed(2)}</span>
+            <span className="out-price">{formatPrice(getDisplayPrice())}</span>
           </div>
-        ) : product?.sale_price && (!session || session?.user?.type === 'user') ? (
+        ) : shouldShowSalePrice() ? (
           <div className="product-price">
-            <span className="old-price">Rp {product.price.toFixed(2)}</span>
-            <span className="new-price">Rp {product.sale_price.toFixed(2)}</span>
+            <span className="old-price">Rp {product.price.toLocaleString('id-ID')}</span>
+            <span className="new-price">{formatPrice(getDisplayPrice())}</span>
           </div>
         ) : (
           <div className="product-price">
-            <span className="out-price">Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product.price?.toFixed(2)}</span>
+            <span className="out-price">
+              {formatPrice(getDisplayPrice())}
+              {isBusinessUser && product?.business_price && (
+                <small className="business-indicator"> (Business)</small>
+              )}
+            </span>
           </div>
         )}
       </div>
+
+      <style jsx>{`
+        .product-label.label-business {
+          background: linear-gradient(135deg, #667eea, #764ba2);
+          color: white;
+          font-weight: 600;
+        }
+        
+        .business-indicator {
+          color: #667eea;
+          font-weight: 500;
+          font-size: 0.8em;
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 
 import ProductEleven from "@/components/features/products/product-eleven";
+import { useSession } from "next-auth/react";
 
 function ShopListOne(props) {
   const { loading, products = [], perPage } = props;
+  const { data: session } = useSession();
   const [fakeArray, setFakeArray] = useState([]);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ function ShopListOne(props) {
                 ))
               : products.map((product, index) => (
                   <div className="col-6" key={index}>
-                    <ProductEleven product={product} />
+                    <ProductEleven product={product} session={session} />
                   </div>
                 ))}
           </div>

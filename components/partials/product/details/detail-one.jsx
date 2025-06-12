@@ -32,6 +32,9 @@ function DetailOne(props) {
   const dispatch = useDispatch();
   const wishlist = useSelector((state) => state.wishlist.items);
 
+  // Check if user is business account
+  const isBusinessUser = session?.user?.accountType === 'business';
+
   // Initialize selected color for pod products and sync with parent
   useEffect(() => {
     if (product?.productType === 'pod' && product?.podColors?.length > 0) {
@@ -83,6 +86,29 @@ function DetailOne(props) {
       }
     }
   }, [product.name, product.image, product.thumbnail]);
+
+  // Function to get the appropriate price based on user type
+  function getDisplayPrice() {
+    if (isBusinessUser && product?.business_price) {
+      return product.business_price;
+    }
+    
+    if (product?.sale_price && !isBusinessUser) {
+      return product.sale_price;
+    }
+    
+    return product?.price || 0;
+  }
+
+  // Function to get the original price (for showing strikethrough)
+  function getOriginalPrice() {
+    return product?.price || 0;
+  }
+
+  // Function to check if we should show sale price styling
+  function shouldShowSalePrice() {
+    return product?.sale_price && !isBusinessUser && product.sale_price < product.price;
+  }
 
   function handleColorChange(color) {
     setSelectedColor(color);
@@ -139,6 +165,9 @@ function DetailOne(props) {
     // Create product with color information for cart
     const productToAdd = {
       ...product,
+      // Add price based on user type
+      displayPrice: getDisplayPrice(),
+      isBusinessUser: isBusinessUser,
       // Add selected color information if available
       ...(selectedColor && {
         selectedColor: {
@@ -167,7 +196,9 @@ function DetailOne(props) {
       productName: productToAdd.name,
       selectedColor: productToAdd.selectedColor,
       cartImage: productToAdd.cartImage,
-      displayName: productToAdd.displayName
+      displayName: productToAdd.displayName,
+      displayPrice: productToAdd.displayPrice,
+      isBusinessUser: productToAdd.isBusinessUser
     });
 
     for (let i = 0; i < qty; i++) {
@@ -353,6 +384,13 @@ function DetailOne(props) {
         )}
       </div>
 
+      {/* Business User Indicator */}
+      {isBusinessUser && (
+        <div className="business-user-indicator">
+          <span className="business-badge">Business Pricing Applied</span>
+        </div>
+      )}
+
       {/* Color Selection for Pod Products */}
       {product?.productType === 'pod' && product?.podColors?.length > 0 && (
         <div className="color-selection-container mb-3">
@@ -382,21 +420,26 @@ function DetailOne(props) {
         </div>
       )}
 
-      {/* Pricing */}
+      {/* Updated Pricing Logic */}
       {availableStock < 1 ? (
         <div className="product-price">
           <span className="out-price">
-            Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product?.sale_price?.toFixed(3) || product.price.toFixed(3)}
+            Rp {getDisplayPrice().toLocaleString('id-ID')}
           </span>
         </div>
-      ) : product?.sale_price && (!session || session?.user?.type === 'user') ? (
+      ) : shouldShowSalePrice() ? (
         <div className="product-price">
-          <span className="old-price pr-2">Rp {product.price.toFixed(3)}</span>
-          <span className="new-price">Rp {product.sale_price.toFixed(3)}</span>
+          <span className="old-price pr-2">Rp {getOriginalPrice().toLocaleString('id-ID')}</span>
+          <span className="new-price">Rp {getDisplayPrice().toLocaleString('id-ID')}</span>
         </div>
       ) : (
         <div className="product-price">
-          <span className="out-price">Rp {session && session?.user?.type === 'business' ? product?.business_price?.toFixed(3) : product.price?.toFixed(3)}</span>
+          <span className="out-price">
+            Rp {getDisplayPrice().toLocaleString('id-ID')}
+            {isBusinessUser && product?.business_price && (
+              <small className="business-price-note"> (Business Price)</small>
+            )}
+          </span>
         </div>
       )}
 
@@ -475,6 +518,27 @@ function DetailOne(props) {
       </div>
 
       <style jsx>{`
+        .business-user-indicator {
+          margin: 15px 0;
+        }
+        
+        .business-badge {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 5px 12px;
+          border-radius: 15px;
+          font-size: 12px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .business-price-note {
+          color: #667eea;
+          font-weight: 500;
+          margin-left: 5px;
+        }
+        
         .color-selection-container {
           margin: 20px 0;
           padding: 15px;

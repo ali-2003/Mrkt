@@ -1,7 +1,7 @@
 // discount-utils.js
 
 // Discount Percentages
-export const FIRST_ORDER_DISCOUNT = 20; // First order is 20% off
+export const FIRST_ORDER_DISCOUNT = 15; // First order is 20% off
 export const REFER_FRIEND_DISCOUNT = 40; // Referral code gives 40% off
 export const REFERRED_FIRST_ORDER_DISCOUNT = 40; // First order for referred customer is 40% off
 

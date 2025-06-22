@@ -78,7 +78,7 @@ function CheckoutPageComponent() {
         setProvinces(provincesData);
       } catch (error) {
         console.error("Error fetching shipping zones:", error);
-        toast.error("Failed to load shipping information");
+        toast.error("Gagal memuat informasi pengiriman");
       }
     };
 
@@ -128,7 +128,7 @@ function CheckoutPageComponent() {
           discount: discountAmount,
           total: subtotal - discountAmount,
           discountDetails: {
-            name: discount.name || "Discount",
+            name: discount.name || "Diskon",
             percentage: discount.percentage,
             amount: discountAmount,
             type: discount.type
@@ -168,8 +168,8 @@ function CheckoutPageComponent() {
           bestDiscount = {
             amount: discountAmount,
             details: {
-              name: "First Order Discount",
-              percentage: 20,
+              name: "Diskon Pesanan Pertama",
+              percentage: 15,
               amount: discountAmount,
               type: "first"
             }
@@ -185,7 +185,7 @@ function CheckoutPageComponent() {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Bundle Discount",
+                name: "Diskon Bundle",
                 percentage: 50,
                 amount: discountAmount,
                 type: "bundle"
@@ -198,7 +198,7 @@ function CheckoutPageComponent() {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Bundle Discount", 
+                name: "Diskon Bundle", 
                 percentage: 30,
                 amount: discountAmount,
                 type: "bundle"
@@ -211,7 +211,7 @@ function CheckoutPageComponent() {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Volume Discount",
+                name: "Diskon Volume",
                 percentage: 30,
                 amount: discountAmount,
                 type: "volume"
@@ -224,7 +224,7 @@ function CheckoutPageComponent() {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Volume Discount",
+                name: "Diskon Volume",
                 percentage: 20,
                 amount: discountAmount,
                 type: "volume"
@@ -306,17 +306,26 @@ function CheckoutPageComponent() {
   // Validate form
   const validateForm = () => {
     const required = ['fullName', 'email', 'phone', 'streetAddress', 'district', 'city', 'postalCode', 'province'];
+    const fieldNames = {
+      fullName: 'Nama Lengkap',
+      email: 'Email',
+      phone: 'Nomor Telepon',
+      streetAddress: 'Alamat Jalan',
+      district: 'Kecamatan',
+      city: 'Kota',
+      postalCode: 'Kode Pos',
+      province: 'Provinsi'
+    };
     
     for (let field of required) {
       if (!formData[field] || formData[field].trim() === '') {
-        const fieldName = field.replace(/([A-Z])/g, ' $1').toLowerCase();
-        toast.error(`Please fill in ${fieldName.replace('street address', 'street address')}`);
+        toast.error(`Harap isi ${fieldNames[field]}`);
         return false;
       }
     }
     
     if (!selectedProvince) {
-      toast.error("Please select a province");
+      toast.error("Harap pilih provinsi");
       return false;
     }
     
@@ -363,7 +372,7 @@ function CheckoutPageComponent() {
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.message || "Checkout failed");
+        throw new Error(data.message || "Checkout gagal");
       }
 
       // Clear cart and redirect to Xendit payment page
@@ -374,7 +383,7 @@ function CheckoutPageComponent() {
 
     } catch (error) {
       console.error("Checkout error:", error);
-      toast.error(error.message || "An error occurred during checkout");
+      toast.error(error.message || "Terjadi kesalahan saat checkout");
     } finally {
       setLoading(false);
     }
@@ -405,7 +414,7 @@ function CheckoutPageComponent() {
   const finalTotal = subtotalAfterDiscount + shippingCost;
 
   if (!session || !items || items.length === 0) {
-    return <div>Loading...</div>;
+    return <div>Memuat...</div>;
   }
 
   return (
@@ -417,11 +426,11 @@ function CheckoutPageComponent() {
               <div className="row">
                 {/* Shipping Information */}
                 <div className="col-lg-7">
-                  <h2 className="checkout-title">Shipping Information</h2>
+                  <h2 className="checkout-title">Informasi Pengiriman</h2>
                   
                   <div className="row">
                     <div className="col-sm-6">
-                      <label>Full Name *</label>
+                      <label>Nama Lengkap *</label>
                       <input
                         type="text"
                         name="fullName"
@@ -447,7 +456,7 @@ function CheckoutPageComponent() {
 
                   <div className="row">
                     <div className="col-sm-6">
-                      <label>Phone Number *</label>
+                      <label>Nomor Telepon *</label>
                       <input
                         type="tel"
                         name="phone"
@@ -460,7 +469,7 @@ function CheckoutPageComponent() {
                     </div>
                     
                     <div className="col-sm-6">
-                      <label>Postal Code *</label>
+                      <label>Kode Pos *</label>
                       <input
                         type="text"
                         name="postalCode"
@@ -472,31 +481,31 @@ function CheckoutPageComponent() {
                     </div>
                   </div>
 
-                  <label>Street Address *</label>
+                  <label>Alamat Jalan *</label>
                   <input
                     type="text"
                     name="streetAddress"
                     className="form-control"
                     value={formData.streetAddress}
                     onChange={handleInputChange}
-                    placeholder="Street address"
+                    placeholder="Alamat jalan lengkap"
                     required
                   />
 
-                  <label>District/Subdistrict *</label>
+                  <label>Kecamatan *</label>
                   <input
                     type="text"
                     name="district"
                     className="form-control"
                     value={formData.district}
                     onChange={handleInputChange}
-                    placeholder="District or Subdistrict"
+                    placeholder="Kecamatan atau kelurahan"
                     required
                   />
 
                   <div className="row">
                     <div className="col-sm-6">
-                      <label>City *</label>
+                      <label>Kota *</label>
                       <input
                         type="text"
                         name="city"
@@ -508,14 +517,14 @@ function CheckoutPageComponent() {
                     </div>
 
                     <div className="col-sm-6">
-                      <label>Province *</label>
+                      <label>Provinsi *</label>
                       <select
                         className="form-control"
                         value={selectedProvince}
                         onChange={handleProvinceChange}
                         required
                       >
-                        <option value="">Select Province</option>
+                        <option value="">Pilih Provinsi</option>
                         {provinces.map((province) => (
                           <option key={province._id} value={province._id}>
                             {province.state}
@@ -525,7 +534,7 @@ function CheckoutPageComponent() {
                     </div>
                   </div>
 
-                  <label>Country</label>
+                  <label>Negara</label>
                   <input
                     type="text"
                     name="country"
@@ -535,27 +544,27 @@ function CheckoutPageComponent() {
                     readOnly
                   />
 
-                  <label>Order Notes (Optional)</label>
+                  <label>Catatan Pesanan (Opsional)</label>
                   <textarea
                     name="notes"
                     className="form-control"
                     rows="4"
                     value={formData.notes}
                     onChange={handleInputChange}
-                    placeholder="Notes about your order, e.g. special notes for delivery."
+                    placeholder="Catatan khusus untuk pesanan Anda, misalnya instruksi pengiriman khusus."
                   ></textarea>
                 </div>
 
                 {/* Order Summary */}
                 <div className="col-lg-5">
                   <div className="order-summary">
-                    <h3>Your Order</h3>
+                    <h3>Pesanan Anda</h3>
 
                     {/* Order Items */}
                     <table className="table table-mini-cart">
                       <thead>
                         <tr>
-                          <th colSpan="2">Product</th>
+                          <th colSpan="2">Produk</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -579,7 +588,7 @@ function CheckoutPageComponent() {
                                       </span>
                                     )}
                                   </h3>
-                                  <span className="product-qty">Qty: {item.qty}</span>
+                                  <span className="product-qty">Jumlah: {item.qty}</span>
                                 </div>
                               </div>
                             </td>
@@ -601,28 +610,28 @@ function CheckoutPageComponent() {
 
                         <tr className="shipping-row">
                           <td>
-                            <strong>Shipping</strong>
+                            <strong>Pengiriman</strong>
                             {selectedProvince && (
                               <div>
                                 <small>{formData.province}</small>
                                 {provinces.find(p => p._id === selectedProvince)?.estimatedDays && (
                                   <small className="text-muted d-block">
-                                    Est: {provinces.find(p => p._id === selectedProvince)?.estimatedDays} Days
+                                    Estimasi: {provinces.find(p => p._id === selectedProvince)?.estimatedDays} Hari
                                   </small>
                                 )}
                               </div>
                             )}
                             {!selectedProvince && (
                               <div>
-                                <small className="text-muted">To be calculated</small>
+                                <small className="text-muted">Akan dihitung</small>
                               </div>
                             )}
                           </td>
                           <td>
                             <strong>
                               {selectedProvince 
-                                ? (shippingCost > 0 ? `Rp ${formatPrice(shippingCost)}` : 'Free')
-                                : 'To be calculated'
+                                ? (shippingCost > 0 ? `Rp ${formatPrice(shippingCost)}` : 'Gratis')
+                                : 'Akan dihitung'
                               }
                             </strong>
                           </td>
@@ -636,7 +645,7 @@ function CheckoutPageComponent() {
                             <strong>
                               {selectedProvince 
                                 ? `Rp ${formatPrice(finalTotal)}`
-                                : 'To be calculated'
+                                : 'Akan dihitung'
                               }
                             </strong>
                           </td>
@@ -649,7 +658,7 @@ function CheckoutPageComponent() {
                       className="btn btn-outline-primary-2 btn-order btn-block"
                       disabled={loading || !selectedProvince}
                     >
-                      {loading ? 'Processing...' : 'PROCEED TO PAYMENT'}
+                      {loading ? 'Memproses...' : 'LANJUT KE PEMBAYARAN'}
                     </button>
                   </div>
                 </div>

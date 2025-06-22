@@ -42,7 +42,7 @@
     "react-slide-toggle": "^0.3.5",
     "react-sticky-box": "^2.0.5",
     "react-tabs": "^6.0.2",
-    "react-toastify": "^10.0.1",
+    "react-toastify": "^11.0.5",
     "redux-persist": "^6.0.0",
     "sanity": "^3.24.1",
     "sib-api-v3-sdk": "^8.5.0",

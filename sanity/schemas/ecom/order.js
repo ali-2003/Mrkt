@@ -98,7 +98,6 @@ export const order = {
           type: "string",
         }
       ],
-      // FIXED: Make discount optional to handle null values
       validation: Rule => Rule.optional()
     },
     {
@@ -134,6 +133,19 @@ export const order = {
               title: "Product Type",
               type: "string",
             },
+            // NEW: Add shipping SKUs for warehouse fulfillment
+            {
+              name: "shippingSku",
+              title: "Shipping SKU",
+              type: "string",
+              description: "Main SKU for warehouse picking (e.g., BTL-001, POD-002)"
+            },
+            {
+              name: "colorShippingSku",
+              title: "Color Variant SKU",
+              type: "string",
+              description: "Specific SKU for color variant (e.g., POD-002-RED)"
+            },
             {
               name: "quantity",
               title: "Quantity",
@@ -165,26 +177,13 @@ export const order = {
                   type: "string",
                 }
               ],
-              // Make selectedColor optional since not all products have colors
               validation: Rule => Rule.optional()
-            },
-            {
-              name: "image",
-              title: "Product Image URL",
-              type: "string",
-              // FIXED: Add validation to ensure it's a string, not an object
-              validation: Rule => Rule.custom((value) => {
-                if (value && typeof value === 'object') {
-                  return 'Image must be a URL string, not an object'
-                }
-                return true
-              })
             }
+            // REMOVED: image field (was causing issues)
           ],
         },
       ],
     },
-    // FIXED: Updated Shipping Information to match Indonesian address format
     {
       name: "shippingInfo",
       title: "Shipping Information",
@@ -240,6 +239,57 @@ export const order = {
           name: "notes",
           title: "Order Notes",
           type: "text"
+        }
+      ]
+    },
+    // NEW: Warehouse fulfillment section
+    {
+      name: "warehouseFulfillment",
+      title: "Warehouse Fulfillment",
+      type: "object",
+      fields: [
+        {
+          name: "status",
+          title: "Fulfillment Status",
+          type: "string",
+          options: {
+            list: [
+              { title: 'Pending', value: 'pending' },
+              { title: 'Processing', value: 'processing' },
+              { title: 'Packed', value: 'packed' },
+              { title: 'Shipped', value: 'shipped' },
+              { title: 'Delivered', value: 'delivered' }
+            ]
+          },
+          initialValue: 'pending'
+        },
+        {
+          name: "pickedBy",
+          title: "Picked By",
+          type: "string",
+          description: "Warehouse staff who picked the items"
+        },
+        {
+          name: "packedBy",
+          title: "Packed By", 
+          type: "string",
+          description: "Warehouse staff who packed the order"
+        },
+        {
+          name: "pickingNotes",
+          title: "Picking Notes",
+          type: "text",
+          description: "Notes from warehouse staff during picking"
+        },
+        {
+          name: "shippingProvider",
+          title: "Shipping Provider",
+          type: "string"
+        },
+        {
+          name: "trackingNumber",
+          title: "Tracking Number",
+          type: "string"
         }
       ]
     },
@@ -322,8 +372,33 @@ export const order = {
           type: "string"
         }
       ],
-      // Make xenditPaymentData optional since it's only populated after payment
       validation: Rule => Rule.optional()
+    },
+    // Email Status
+    {
+      name: "emailStatus",
+      title: "Email Status",
+      type: "object",
+      fields: [
+        {
+          name: "orderConfirmationSent",
+          title: "Order Confirmation Sent",
+          type: "boolean",
+          initialValue: false
+        },
+        {
+          name: "paymentSuccessSent",
+          title: "Payment Success Email Sent",
+          type: "boolean",
+          initialValue: false
+        },
+        {
+          name: "shippingNotificationSent",
+          title: "Shipping Notification Sent",
+          type: "boolean",
+          initialValue: false
+        }
+      ]
     },
     // Timestamps
     {
@@ -359,13 +434,14 @@ export const order = {
       subtitle: 'totalPrice',
       status: 'status',
       paymentStatus: 'paymentStatus',
-      email: 'email'
+      email: 'email',
+      orderId: 'orderId'
     },
     prepare(selection) {
-      const { title, subtitle, status, paymentStatus, email } = selection;
+      const { title, subtitle, status, paymentStatus, email, orderId } = selection;
       return {
-        title: `${title || email} - ${status}`,
-        subtitle: `Rp ${subtitle?.toLocaleString('id-ID') || 0} | Payment: ${paymentStatus}`
+        title: `${orderId || 'Order'} - ${title || email}`,
+        subtitle: `Rp ${subtitle?.toLocaleString('id-ID') || 0} | ${status} | Payment: ${paymentStatus}`
       };
     }
   },

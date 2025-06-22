@@ -9,11 +9,14 @@ export const product = {
       type: "number",
       validation: (Rule) => Rule.required(),
     },
+    // FIXED: Removed readOnly so you can type in it manually
     {
-      name: "skuId",
-      title: "Paykings SKU ID",
+      name: "shippingSku",
+      title: "Shipping SKU ID",
       type: "string",
-      // validation: (Rule) => Rule.required(),
+      description: "SKU for warehouse fulfillment (e.g., BTL-001, POD-002, ACC-003)",
+      placeholder: "Enter SKU (e.g., BTL-001)",
+      // validation: (Rule) => Rule.required(), // Uncomment this later if you want it required
     },
     {
       name: "name",
@@ -31,7 +34,6 @@ export const product = {
       },
       validation: (Rule) => Rule.required(),
     },
-    // ADD NEW PRODUCT TYPE FIELD HERE
     {
       name: "productType",
       title: "Product Type",
@@ -55,7 +57,6 @@ export const product = {
       name: "price",
       title: "Price",
       type: "number",
-      // validation: (Rule) => Rule.required(),
     },
     {
       name: "sale_price",
@@ -114,9 +115,9 @@ export const product = {
       of: [{ type: "image" }],
       validation: (Rule) =>
         Rule.min(1).error("At least one picture must be added"),
-      hidden: ({ document }) => document?.productType === 'pod', // Hide for pods since they use color-specific images
+      hidden: ({ document }) => document?.productType === 'pod',
     },
-    // NEW: Pod Colors Configuration
+    // Pod Colors Configuration
     {
       name: "podColors",
       title: "Pod Colors",
@@ -142,6 +143,14 @@ export const product = {
                 invert: false
               }),
             },
+            // FIXED: Also made color SKU editable
+            {
+              name: "colorShippingSku",
+              title: "Color Shipping SKU",
+              type: "string",
+              description: "SKU for this color variant (e.g., POD-001-RED)",
+              placeholder: "Enter color SKU (e.g., POD-001-RED)",
+            },
             {
               name: "stock",
               title: "Stock for this color",
@@ -166,20 +175,20 @@ export const product = {
           preview: {
             select: {
               title: "colorName",
-              subtitle: "stock",
+              subtitle: "colorShippingSku",
               media: "pictures.0",
             },
             prepare({ title, subtitle, media }) {
               return {
                 title: title || "Unnamed Color",
-                subtitle: `Stock: ${subtitle || 0}`,
+                subtitle: `SKU: ${subtitle || 'Enter SKU'}`,
                 media: media,
               };
             },
           },
         },
       ],
-      hidden: ({ document }) => document?.productType !== 'pod', // Only show for pod products
+      hidden: ({ document }) => document?.productType !== 'pod',
       validation: (Rule) => 
         Rule.custom((podColors, context) => {
           if (context.document?.productType === 'pod') {
@@ -269,19 +278,16 @@ export const product = {
   preview: {
     select: {
       title: "name",
-      subtitle: "productType",
+      subtitle: "shippingSku",
       media: "pictures.0.img",
       podColors: "podColors",
     },
     prepare({ title, subtitle, media, podColors }) {
-      // For pod products, use the first color's first image as preview
-      const previewMedia = subtitle === 'pod' && podColors?.[0]?.pictures?.[0] 
-        ? podColors[0].pictures[0] 
-        : media;
+      const previewMedia = podColors?.[0]?.pictures?.[0] ? podColors[0].pictures[0] : media;
       
       return {
         title: title || "Unnamed Product",
-        subtitle: subtitle || "Unknown Type",
+        subtitle: `SKU: ${subtitle || 'Not entered'}`,
         media: previewMedia,
       };
     },

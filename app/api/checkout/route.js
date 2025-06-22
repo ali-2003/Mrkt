@@ -81,6 +81,79 @@ export async function POST(request) {
       );
     }
     
+    // ======= NEW: FETCH SKUs FROM SANITY =======
+    console.log("🏷️ Fetching product SKUs from Sanity...");
+    
+    const enrichedItems = await Promise.all(
+      items.map(async (cartItem) => {
+        try {
+          console.log(`Fetching SKU for product ID: ${cartItem.id}`);
+          
+          // Fetch complete product from Sanity using the product ID
+          const productFromSanity = await sanityAdminClient.fetch(`
+            *[_type == "product" && id == $productId][0] {
+              _id,
+              id,
+              name,
+              slug,
+              productType,
+              shippingSku,
+              podColors[] {
+                colorName,
+                colorCode,
+                colorShippingSku
+              }
+            }
+          `, { productId: cartItem.id });
+
+          if (!productFromSanity) {
+            console.warn(`⚠️ Product not found in Sanity for ID: ${cartItem.id}`);
+            return {
+              ...cartItem,
+              shippingSku: `MANUAL-${cartItem.id}`,
+              colorShippingSku: null
+            };
+          }
+
+          // Determine the correct SKUs
+          let mainSKU = productFromSanity.shippingSku;
+          let colorSKU = null;
+
+          // For pod products with color selection
+          if (productFromSanity.productType === 'pod' && cartItem.selectedColor && productFromSanity.podColors) {
+            const selectedColorData = productFromSanity.podColors.find(color => 
+              color.colorName === cartItem.selectedColor.colorName || 
+              color.colorName === cartItem.selectedColor ||
+              (typeof cartItem.selectedColor === 'string' && color.colorName === cartItem.selectedColor)
+            );
+            
+            if (selectedColorData?.colorShippingSku) {
+              colorSKU = selectedColorData.colorShippingSku;
+            }
+          }
+
+          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''}`);
+
+          return {
+            ...cartItem,
+            shippingSku: mainSKU || `MISSING-${cartItem.id}`,
+            colorShippingSku: colorSKU
+          };
+
+        } catch (error) {
+          console.error(`❌ Error fetching SKU for product ${cartItem.id}:`, error);
+          return {
+            ...cartItem,
+            shippingSku: `ERROR-${cartItem.id}`,
+            colorShippingSku: null
+          };
+        }
+      })
+    );
+
+    console.log("🎯 SKU fetching complete!");
+    // ======= END SKU FETCHING =======
+    
     // Fetch user data from Sanity to get complete profile
     const userData = await sanityAdminClient.fetch(
       `*[_type == 'user' && email == $email][0]{
@@ -94,8 +167,8 @@ export async function POST(request) {
     let cartCalculation = discountCalculation;
     if (!cartCalculation) {
       try {
-        // Validate items before calculating
-        const validItems = items.map(item => ({
+        // Validate items before calculating (use enriched items)
+        const validItems = enrichedItems.map(item => ({
           ...item,
           qty: item.qty || 1,
           sum: typeof item.sum === 'number' ? item.sum : (item.sale_price || item.price || 0) * (item.qty || 1),
@@ -107,7 +180,7 @@ export async function POST(request) {
         console.error("Error calculating cart total:", error);
         
         // Fallback calculation if there's an error
-        const subtotal = items.reduce((total, item) => {
+        const subtotal = enrichedItems.reduce((total, item) => {
           if (item && typeof item.sum === 'number') {
             return total + item.sum;
           }
@@ -167,8 +240,8 @@ export async function POST(request) {
     // Generate order ID
     const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     
-    // Transform cart items to match new schema structure with proper image handling
-    const transformedProducts = items.map(item => {
+    // Transform cart items to match new schema structure with SKUs
+    const transformedProducts = enrichedItems.map(item => {
       const productData = {
         name: item.name,
         slug: item.slug?.current || item.slug || '',
@@ -177,19 +250,35 @@ export async function POST(request) {
         quantity: item.qty,
         price: item.sale_price || item.price,
         totalPrice: item.sum,
+        
+        // 🏷️ NEW: Include shipping SKUs for warehouse fulfillment
+        shippingSku: item.shippingSku,
+        colorShippingSku: item.colorShippingSku,
+        
         selectedColor: item.selectedColor ? {
           colorName: item.selectedColor.colorName,
           colorCode: item.selectedColor.colorCode
         } : undefined, // Only include if exists
-        image: getProductImageUrl(item) // FIXED: Use helper function to get string URL
+        
+        // REMOVED: image field (as requested to avoid issues)
+        // image: getProductImageUrl(item)
       };
       
       // Remove undefined fields to prevent schema issues
       if (productData.selectedColor === undefined) {
         delete productData.selectedColor;
       }
+      if (productData.colorShippingSku === null || productData.colorShippingSku === undefined) {
+        delete productData.colorShippingSku;
+      }
       
       return productData;
+    });
+    
+    // Log the final products with SKUs
+    console.log("📦 Final products with SKUs:");
+    transformedProducts.forEach(product => {
+      console.log(`   - ${product.name}: ${product.shippingSku}${product.colorShippingSku ? ` / ${product.colorShippingSku}` : ''}`);
     });
     
     // Prepare shipping info with proper field mapping for Indonesian address format
@@ -227,10 +316,29 @@ export async function POST(request) {
         message: cartCalculation.discountDetails.message || ''
       } : null, // FIXED: Set to null if no discount
       totalPrice: finalTotal,
-      products: transformedProducts,
+      products: transformedProducts, // Now includes SKUs!
       shippingInfo: formattedShippingInfo, // FIXED: Use properly formatted shipping info
+      
+      // NEW: Warehouse fulfillment tracking
+      warehouseFulfillment: {
+        status: 'pending',
+        pickedBy: null,
+        packedBy: null,
+        pickingNotes: null,
+        shippingProvider: null,
+        trackingNumber: null
+      },
+      
       status: "pending",
       paymentStatus: "pending",
+      
+      // NEW: Email status tracking
+      emailStatus: {
+        orderConfirmationSent: false,
+        paymentSuccessSent: false,
+        shippingNotificationSent: false
+      },
+      
       createdAt: new Date().toISOString()
     };
     
@@ -239,13 +347,13 @@ export async function POST(request) {
       productCount: orderData.products.length,
       hasDiscount: !!orderData.discount,
       shippingInfo: orderData.shippingInfo,
-      // Log first product to check image field
-      firstProductImage: orderData.products[0]?.image
+      // Log SKUs for verification
+      productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku }))
     });
     
     // Save order to Sanity
     const orderResult = await sanityAdminClient.create(orderData);
-    console.log("Order saved successfully:", orderResult._id);
+    console.log("✅ Order saved successfully with SKUs:", orderResult._id);
     
     // Create Xendit Invoice
     try {
@@ -319,7 +427,12 @@ export async function POST(request) {
         order_id: orderResult._id,
         invoice_url: invoice.invoiceUrl,
         xendit_invoice_id: invoice.id,
-        order_number: orderId
+        order_number: orderId,
+        // DEBUG: Include SKU info in response for verification
+        debug: {
+          skusFetched: transformedProducts.length,
+          productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`)
+        }
       });
 
     } catch (xenditError) {

@@ -138,6 +138,16 @@ function CartPageComponent() {
       .reduce((count, item) => count + (item.qty || 1), 0);
   };
 
+  // Function to count products by name/type (for different devices)
+  const countProductsByType = (items, type) => {
+    if (!items || !Array.isArray(items)) return 0;
+    return items.filter(item => {
+      const productName = (item.name || '').toLowerCase();
+      const productType = (item.productType || '').toLowerCase();
+      return productName.includes(type.toLowerCase()) || productType.includes(type.toLowerCase());
+    }).reduce((count, item) => count + (item.qty || 1), 0);
+  };
+
   // Function to calculate total for a product type using stored prices
   const getProductTypeTotal = (items, productType) => {
     if (!items || !Array.isArray(items)) return 0;
@@ -155,9 +165,21 @@ function CartPageComponent() {
     return !session || session?.user?.accountType !== 'business';
   };
 
-  // Check if cart has pod devices
-  const hasPodDevices = () => {
-    return items.some(item => item.productType === 'pod');
+  // Check if cart has specific device types
+  const hasAryaPrimeDevice = () => {
+    return items.some(item => {
+      const productName = (item.name || '').toLowerCase();
+      const productType = (item.productType || '').toLowerCase();
+      return productName.includes('arya prime') || productType.includes('aryaprime') || productType.includes('arya_prime');
+    });
+  };
+
+  const hasPodPack = () => {
+    return items.some(item => {
+      const productName = (item.name || '').toLowerCase();
+      const productType = (item.productType || '').toLowerCase();
+      return (productName.includes('pod') && !productName.includes('arya prime')) || productType === 'pod';
+    });
   };
 
   // Count number of bottles in cart
@@ -165,7 +187,7 @@ function CartPageComponent() {
     return countProductTypes(items, 'bottle');
   };
 
-  // CRITICAL FIX: Create a single source of truth for discount calculation
+  // UPDATED: Create a single source of truth for discount calculation with corrected bundles
   const calculateDiscount = async (cartItems, manualDiscount = null) => {
     if (!cartItems || cartItems.length === 0) return null;
 
@@ -189,17 +211,18 @@ function CartPageComponent() {
           discount: discountAmount,
           total: subtotal - discountAmount,
           discountDetails: {
-            name: manualDiscount.name || "Discount",
+            name: manualDiscount.name || "Diskon",
             percentage: manualDiscount.percentage,
             amount: discountAmount,
-            message: `${manualDiscount.percentage}% discount applied`
+            message: `Diskon ${manualDiscount.percentage}% diterapkan`
           }
         };
       }
 
       // Initialize variables for bundles 
       const bottleCount = countProductTypes(validItems, 'bottle');
-      const hasPodDevice = countProductTypes(validItems, 'pod') > 0;
+      const hasAryaPrime = hasAryaPrimeDevice();
+      const hasPod = hasPodPack();
       const bottleTotal = getProductTypeTotal(validItems, 'bottle');
 
       // Initialize best discount
@@ -213,16 +236,16 @@ function CartPageComponent() {
       
       // Check for first order discount (logged in users only)
       if (session?.user && userDataObj?.orderCount === 0) {
-        const discountAmount = subtotal * 0.2; // 20% first order discount
+        const discountAmount = subtotal * 0.15; // 15% first order discount
         
         if (discountAmount > bestDiscount.amount) {
           bestDiscount = {
             amount: discountAmount,
             details: {
-              name: "First Order Discount",
-              percentage: 20,
+              name: "Diskon Pesanan Pertama",
+              percentage: 15,
               amount: discountAmount,
-              message: "20% off your first order",
+              message: "Diskon 15% untuk pesanan pertama",
               type: "first"
             }
           };
@@ -231,69 +254,71 @@ function CartPageComponent() {
 
       // If not a business account, check for bundle discounts
       if (isEligibleForDiscounts()) {
-        // Pod + 3+ bottles: 50% off bottles
-        if (hasPodDevice && bottleCount >= 3) {
-          const discountAmount = bottleTotal * 0.5;
+        // UPDATED BUNDLE DISCOUNTS:
+        
+        // Arya Prime + 3 bottles: 35% off
+        if (hasAryaPrime && bottleCount >= 3) {
+          const discountAmount = bottleTotal * 0.35;
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Bundle Discount",
-                percentage: 50,
+                name: "Diskon Bundle Arya Prime",
+                percentage: 35,
                 amount: discountAmount,
-                message: `Pod device + ${bottleCount} bottles: 50% off bottles`,
+                message: `Arya Prime + ${bottleCount} botol: 35% off botol`,
                 type: "bundle"
               }
             };
           }
-        } 
-        // Pod + 1-2 bottles: 30% off bottles
-        else if (hasPodDevice && bottleCount > 0) {
+        }
+        // Pod Pack + 3 bottles: 30% off bottles
+        else if (hasPod && bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.3;
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Bundle Discount",
+                name: "Diskon Bundle Pod Pack",
                 percentage: 30,
                 amount: discountAmount,
-                message: `Pod device + bottle: 30% off bottle`,
+                message: `Pod Pack + ${bottleCount} botol: 30% off botol`,
                 type: "bundle"
               }
             };
           }
-        } 
-        // 5+ bottles: 30% off
-        else if (bottleCount >= 5) {
-          const discountAmount = bottleTotal * 0.3;
+        }
+        // Arya Prime Device + 1 bottle: 15% off
+        else if (hasAryaPrime && bottleCount >= 1) {
+          const discountAmount = bottleTotal * 0.15;
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Volume Discount",
-                percentage: 30,
+                name: "Diskon Bundle Arya Prime",
+                percentage: 15,
                 amount: discountAmount,
-                message: `${bottleCount} bottles bundle: 30% off`,
-                type: "volume"
+                message: `Arya Prime + botol: 15% off botol`,
+                type: "bundle"
               }
             };
           }
-        } 
-        // 3-4 bottles: 20% off
-        else if (bottleCount >= 3) {
+        }
+        // 3 bottles: 20% off (standalone without devices)
+        else if (!hasAryaPrime && !hasPod && bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.2;
           
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Volume Discount",
+                name: "Diskon Volume Botol",
                 percentage: 20,
                 amount: discountAmount,
-                message: `${bottleCount} bottles bundle: 20% off`,
+                message: `Bundle ${bottleCount} botol: 20% off`,
                 type: "volume"
               }
             };
@@ -385,12 +410,12 @@ function CartPageComponent() {
   const handleDiscount = async () => {
     try {
       if (discount) {
-        toast.error("Only 1 discount allowed per checkout");
+        toast.error("Hanya 1 diskon yang diizinkan per checkout");
         return;
       }
       
       if (!code.trim()) {
-        toast.error("Please enter a discount code");
+        toast.error("Harap masukkan kode diskon");
         return;
       }
       
@@ -400,13 +425,13 @@ function CartPageComponent() {
       if (code === "TEST") {
         const testDiscount = {
           code: "TEST",
-          name: "Test Discount",
+          name: "Diskon Test",
           percentage: 25,
           type: "test"
         };
         
         dispatch(applyDiscount(testDiscount));
-        toast.success("Test discount applied!");
+        toast.success("Diskon test diterapkan!");
         setCode("");
         return;
       }
@@ -423,28 +448,28 @@ function CartPageComponent() {
         if (referralCheck) {
           const referralDiscount = {
             code: code,
-            name: "Referral Discount",
+            name: "Diskon Referral",
             percentage: 40,
             type: "referral",
             email: referralCheck.email
           };
           
           dispatch(applyDiscount(referralDiscount));
-          toast.success("Referral discount applied!");
+          toast.success("Diskon referral diterapkan!");
           setCode("");
           return;
         }
         
-        toast.error("Invalid discount code");
+        toast.error("Kode diskon tidak valid");
         return;
       }
 
       // Apply database discount to Redux
       dispatch(applyDiscount(res[0]));
-      toast.success("Discount applied!");
+      toast.success("Diskon diterapkan!");
     } catch (err) {
       console.error("Error applying discount:", err);
-      toast.error("Error applying discount");
+      toast.error("Gagal menerapkan diskon");
     } finally {
       setLoading(false);
       setCode("");
@@ -473,7 +498,7 @@ function CartPageComponent() {
     }
     
     if (items?.length < 1) {
-      toast.error("No products in the cart");
+      toast.error("Tidak ada produk dalam keranjang");
       return;
     }
 
@@ -509,7 +534,7 @@ function CartPageComponent() {
 
   return (
     <div className="main">
-      <PageHeader title="Keranjang Belanja" subTitle="Shop" />
+      <PageHeader title="Keranjang Belanja" subTitle="Belanja" />
       <nav className="breadcrumb-nav">
         <div className="container">
           <ol className="breadcrumb">
@@ -530,9 +555,9 @@ function CartPageComponent() {
                   <table className="table table-cart table-mobile">
                     <thead>
                       <tr>
-                        <th>Product</th>
-                        <th>Price</th>
-                        <th>Quantity</th>
+                        <th>Produk</th>
+                        <th>Harga</th>
+                        <th>Jumlah</th>
                         <th>Total</th>
                         <th></th>
                       </tr>
@@ -594,7 +619,7 @@ function CartPageComponent() {
                                       fontWeight: '500',
                                       textTransform: 'capitalize'
                                     }}>
-                                      Color: {item.selectedColor.colorName}
+                                      Warna: {item.selectedColor.colorName}
                                     </span>
                                   </div>
                                 )}
@@ -607,7 +632,7 @@ function CartPageComponent() {
                                     marginTop: '4px',
                                     fontWeight: '500'
                                   }}>
-                                    Business Price Applied
+                                    Harga Bisnis Diterapkan
                                   </div>
                                 )}
 
@@ -619,8 +644,8 @@ function CartPageComponent() {
                                     marginTop: '4px'
                                   }}>
                                     {item.selectedColor.stock < 5 ? 
-                                      `Only ${item.selectedColor.stock} left in ${item.selectedColor.colorName}` : 
-                                      `${item.selectedColor.stock} available in ${item.selectedColor.colorName}`
+                                      `Hanya ${item.selectedColor.stock} tersisa dalam warna ${item.selectedColor.colorName}` : 
+                                      `${item.selectedColor.stock} tersedia dalam warna ${item.selectedColor.colorName}`
                                     }
                                   </div>
                                 )}
@@ -668,7 +693,7 @@ function CartPageComponent() {
                               type="text"
                               className="form-control"
                               required
-                              placeholder="coupon code"
+                              placeholder="kode kupon"
                               value={code}
                               onChange={(e) => setCode(e.target.value)}
                             />
@@ -695,14 +720,14 @@ function CartPageComponent() {
                         <div className="d-flex justify-content-between align-items-center">
                           <div>
                             <span className="text-success">
-                              {discount.name} {discount.percentage ? `(${discount.percentage}%)` : ''} applied
+                              {discount.name} {discount.percentage ? `(${discount.percentage}%)` : ''} diterapkan
                             </span>
                           </div>
                           <button 
                             className="btn btn-sm btn-outline-danger"
                             onClick={handleRemoveDiscount}
                           >
-                            Remove
+                            Hapus
                           </button>
                         </div>
                       )}
@@ -712,14 +737,14 @@ function CartPageComponent() {
                       className="btn btn-outline-dark-2"
                       onClick={updateCart}
                     >
-                      <span>UPDATE CART</span>
+                      <span>PERBARUI KERANJANG</span>
                       <i className="icon-refresh"></i>
                     </button>
                   </div>
                 </div>
                 <div className="col-lg-3">
                   <div className="summary summary-cart">
-                    <h3 className="summary-title">Cart Total</h3>
+                    <h3 className="summary-title">Total Keranjang</h3>
 
                     <table className="table table-summary">
                       <tbody>
@@ -733,8 +758,8 @@ function CartPageComponent() {
                         {cartCalculation?.discount > 0 && cartCalculation?.discountDetails && (
                           <tr className="summary-shipping">
                             <td className="py-0">
-                              Discount <br />
-                              {cartCalculation.discountDetails.name || discount?.name || "Discount"}
+                              Diskon
+                              {cartCalculation.discountDetails.name || discount?.name || "Diskon"}
                               {cartCalculation.discountDetails.percentage 
                                 ? ` - ${cartCalculation.discountDetails.percentage}%` 
                                 : discount?.percentage ? ` - ${discount.percentage}%` : ''}
@@ -748,7 +773,7 @@ function CartPageComponent() {
                         )}
                         
                         <tr className="summary-subtotal">
-                          <td>Subtotal After Discount:</td>
+                          <td>Subtotal Setelah Diskon:</td>
                           <td>
                             Rp {formatPrice(getAfterDiscountTotal())}
                           </td>
@@ -763,16 +788,16 @@ function CartPageComponent() {
                       </tbody>
                     </table>
 
-                    {/* Display eligible discounts info for customers */}
+                    {/* UPDATED: Display eligible discounts info for customers */}
                     {isEligibleForDiscounts() && items.length > 0 && !cartCalculation?.discountDetails && (
                       <div className="alert alert-info pb-1 pt-1 mb-2 mt-2">
                         <small>
-                          {!session && "Sign up for discounts! "}
-                          {session && userData?.orderCount === 0 && "First order discount: 20% off! "}
-                          {hasPodDevices() && getBottleCount() >= 3 && "Pod + 3 bottles: 50% off bottles! "}
-                          {hasPodDevices() && getBottleCount() > 0 && getBottleCount() < 3 && "Pod + bottle: 30% off bottle! "}
-                          {!hasPodDevices() && getBottleCount() >= 5 && "5+ bottles bundle: 30% off! "}
-                          {!hasPodDevices() && getBottleCount() >= 3 && getBottleCount() < 5 && "3+ bottles bundle: 20% off! "}
+                          {!session && "Daftar untuk mendapat diskon! "}
+                          {session && userData?.orderCount === 0 && "Diskon pesanan pertama: 15% off! "}
+                          {hasAryaPrimeDevice() && getBottleCount() >= 3 && "Arya Prime + 3 botol: 35% off botol! "}
+                          {hasAryaPrimeDevice() && getBottleCount() >= 1 && getBottleCount() < 3 && "Arya Prime + botol: 15% off botol! "}
+                          {hasPodPack() && getBottleCount() >= 3 && "Pod Pack + 3 botol: 30% off botol! "}
+                          {!hasAryaPrimeDevice() && !hasPodPack() && getBottleCount() >= 3 && "Bundle 3 botol: 20% off! "}
                         </small>
                       </div>
                     )}
@@ -783,7 +808,7 @@ function CartPageComponent() {
                       disabled={items.length < 1}
                       onClick={handleCheckout}
                     >
-                      PROCEED TO CHECKOUT
+                      LANJUT KE CHECKOUT
                     </button>
                   </div>
 
@@ -791,7 +816,7 @@ function CartPageComponent() {
                     href="/ejuice"
                     className="btn btn-outline-dark-2 btn-block mb-3"
                   >
-                    <span>CONTINUE SHOPPING</span>
+                    <span>LANJUT BELANJA</span>
                     <i className="icon-refresh"></i>
                   </Link>
                 </div>
@@ -805,7 +830,7 @@ function CartPageComponent() {
                       style={{ lineHeight: 1, fontSize: "15rem" }}
                     ></i>
                     <p className="px-3 py-2 cart-empty mb-3">
-                      No Produk dalam keranjang
+                      Tidak ada produk dalam keranjang
                     </p>
                     <p className="return-to-shop mb-0">
                       <Link href="/ejuice" className="btn btn-primary">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -8,19 +8,51 @@ import PageHeader from "@/components/features/page-header";
 import ShopListOne from "@/components/partials/shop/list/shop-list-one";
 import Pagination from "@/components/features/pagination";
 
-
 function CategoryPageComponent({ products: data }) {
   const [toggle, setToggle] = useState(false);
-  const [products, setProducts] = useState(data);
-
+  
   const router = useRouter();
-  const path = usePathname()
-  const searchParams = useSearchParams()
-  const sortBy = searchParams.get('sortBy')
+  const path = usePathname();
+  const searchParams = useSearchParams();
+  const sortBy = searchParams.get('sortBy');
 
   const loading = false;
   const perPage = 6;
-  const totalCount = products?.length;
+
+  // FIXED: Use useMemo for sorted products to avoid mutations
+  const products = useMemo(() => {
+    if (!data || !Array.isArray(data)) {
+      console.warn('Invalid products data:', data);
+      return [];
+    }
+
+    // Create a copy of the array to avoid mutation
+    const productsCopy = [...data];
+
+    if (!sortBy || sortBy === "default") {
+      return productsCopy;
+    }
+
+    if (sortBy === "rating") {
+      return productsCopy.sort((a, b) => {
+        const ratingA = a?.ratings || 0;
+        const ratingB = b?.ratings || 0;
+        return ratingB - ratingA;
+      });
+    }
+
+    if (sortBy === "new") {
+      return productsCopy.sort((a, b) => {
+        const dateA = a?._createdAt ? new Date(a._createdAt) : new Date(0);
+        const dateB = b?._createdAt ? new Date(b._createdAt) : new Date(0);
+        return dateB - dateA;
+      });
+    }
+
+    return productsCopy;
+  }, [data, sortBy]);
+
+  const totalCount = products?.length || 0;
 
   useEffect(() => {
     window.addEventListener("resize", resizeHandle);
@@ -30,38 +62,47 @@ function CategoryPageComponent({ products: data }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!sortBy) setProducts(data)
-
-    if (sortBy === "rating") {
-      setProducts(data.sort((a, b) => b?.ratings - a?.ratings))
-    }
-
-    if (sortBy === "new") {
-      setProducts(data.sort((a, b) => new Date(b?._createdAt) - new Date(a?._createdAt)))
-    }
-
-  }, [sortBy])
-
-  
+  // FIXED: Improved resize handler
   function resizeHandle() {
-    if (document.querySelector("body").offsetWidth < 992) setToggle(true);
-    else setToggle(false);
-  }
-
-
-  function onSortByChange(e) {
-    const url = path + "?"
-    const query = e.target.value
-
-    if (query === "default") {
-      router.push(url)
-      return
+    if (typeof window !== 'undefined' && document?.querySelector("body")) {
+      if (document.querySelector("body").offsetWidth < 992) {
+        setToggle(true);
+      } else {
+        setToggle(false);
+      }
     }
-
-    router.push(url + "sortBy=" + query);
   }
 
+  // FIXED: Improved sort handler with error handling
+  function onSortByChange(e) {
+    try {
+      const query = e.target.value;
+      const url = path;
+
+      if (query === "default") {
+        router.push(url);
+        return;
+      }
+
+      router.push(`${url}?sortBy=${query}`);
+    } catch (error) {
+      console.error('Error changing sort:', error);
+    }
+  }
+
+  // FIXED: Add error boundary for invalid data
+  if (!data) {
+    return (
+      <main className="main shop">
+        <PageHeader title="Shop" subTitle="Ejuice" />
+        <div className="container">
+          <div className="alert alert-warning">
+            No products available at the moment.
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="main shop">
@@ -92,7 +133,7 @@ function CategoryPageComponent({ products: data }) {
                       Showing
                       <span>
                         {" "}
-                        {products?.length} of {totalCount}
+                        {products.length} of {totalCount}
                       </span>{" "}
                       Products
                     </div>
@@ -110,7 +151,7 @@ function CategoryPageComponent({ products: data }) {
                         id="sortby"
                         className="form-control"
                         onChange={onSortByChange}
-                        value={sortBy ? sortBy : "default"}
+                        value={sortBy || "default"}
                       >
                         <option value="default">Default</option>
                         <option value="rating">Most Rated</option>
@@ -125,7 +166,7 @@ function CategoryPageComponent({ products: data }) {
                 products={products}
                 perPage={perPage}
                 loading={loading}
-              ></ShopListOne>
+              />
 
               {/* {totalCount > perPage ? (
                 <Pagination perPage={perPage} total={totalCount}></Pagination>
@@ -133,7 +174,6 @@ function CategoryPageComponent({ products: data }) {
                 ""
               )} */}
             </div>
-
           </div>
         </div>
       </div>

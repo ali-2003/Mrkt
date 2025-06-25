@@ -1,6 +1,8 @@
+// app/api/checkout/route.js
 import { NextResponse } from "next/server";
 import { sanityAdminClient } from "@/sanity/lib/client";
 import { calculateCartTotal } from "@/utils/discountValue";
+import { sendOrderConfirmationEmail } from "@/utils/brevoEmail"; // Import email function
 import { Xendit } from "xendit-node";
 import urlFor from "@/sanity/lib/image";
 
@@ -81,7 +83,7 @@ export async function POST(request) {
       );
     }
     
-    // ======= NEW: FETCH SKUs FROM SANITY =======
+    // ======= FETCH SKUs FROM SANITY =======
     console.log("🏷️ Fetching product SKUs from Sanity...");
     
     const enrichedItems = await Promise.all(
@@ -152,7 +154,6 @@ export async function POST(request) {
     );
 
     console.log("🎯 SKU fetching complete!");
-    // ======= END SKU FETCHING =======
     
     // Fetch user data from Sanity to get complete profile
     const userData = await sanityAdminClient.fetch(
@@ -251,7 +252,7 @@ export async function POST(request) {
         price: item.sale_price || item.price,
         totalPrice: item.sum,
         
-        // 🏷️ NEW: Include shipping SKUs for warehouse fulfillment
+        // Include shipping SKUs for warehouse fulfillment
         shippingSku: item.shippingSku,
         colorShippingSku: item.colorShippingSku,
         
@@ -259,9 +260,6 @@ export async function POST(request) {
           colorName: item.selectedColor.colorName,
           colorCode: item.selectedColor.colorCode
         } : undefined, // Only include if exists
-        
-        // REMOVED: image field (as requested to avoid issues)
-        // image: getProductImageUrl(item)
       };
       
       // Remove undefined fields to prevent schema issues
@@ -286,12 +284,12 @@ export async function POST(request) {
       fullName: shippingInfo.fullName,
       email: shippingInfo.email,
       phone: shippingInfo.phone,
-      streetAddress: shippingInfo.streetAddress, // FIXED: Use correct field name
-      district: shippingInfo.district, // FIXED: Add district field
+      streetAddress: shippingInfo.streetAddress,
+      district: shippingInfo.district,
       city: shippingInfo.city,
       postalCode: shippingInfo.postalCode,
-      province: shippingInfo.province, // FIXED: Use province instead of state
-      country: shippingInfo.country || "Indonesia", // FIXED: Add country field
+      province: shippingInfo.province,
+      country: shippingInfo.country || "Indonesia",
       notes: shippingInfo.notes || ""
     };
     
@@ -301,7 +299,7 @@ export async function POST(request) {
       orderId: orderId,
       userId: userData?._id || null,
       email: user.email,
-      name: shippingInfo.fullName, // Use shipping info name instead of user name
+      name: shippingInfo.fullName,
       paid: false,
       contact: shippingInfo.phone,
       subTotal: cartCalculation.original,
@@ -314,12 +312,12 @@ export async function POST(request) {
         email: discount.email || null,
         type: discount.type || 'custom',
         message: cartCalculation.discountDetails.message || ''
-      } : null, // FIXED: Set to null if no discount
+      } : null,
       totalPrice: finalTotal,
-      products: transformedProducts, // Now includes SKUs!
-      shippingInfo: formattedShippingInfo, // FIXED: Use properly formatted shipping info
+      products: transformedProducts,
+      shippingInfo: formattedShippingInfo,
       
-      // NEW: Warehouse fulfillment tracking
+      // Warehouse fulfillment tracking
       warehouseFulfillment: {
         status: 'pending',
         pickedBy: null,
@@ -332,7 +330,7 @@ export async function POST(request) {
       status: "pending",
       paymentStatus: "pending",
       
-      // NEW: Email status tracking
+      // Email status tracking
       emailStatus: {
         orderConfirmationSent: false,
         paymentSuccessSent: false,
@@ -347,7 +345,6 @@ export async function POST(request) {
       productCount: orderData.products.length,
       hasDiscount: !!orderData.discount,
       shippingInfo: orderData.shippingInfo,
-      // Log SKUs for verification
       productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku }))
     });
     
@@ -355,7 +352,66 @@ export async function POST(request) {
     const orderResult = await sanityAdminClient.create(orderData);
     console.log("✅ Order saved successfully with SKUs:", orderResult._id);
     
-    // Create Xendit Invoice
+    // 🔥 SEND EMAIL IMMEDIATELY AFTER ORDER CREATION (NO WEBHOOK NEEDED)
+    try {
+      console.log("📧 Sending order confirmation email immediately...");
+      
+      // Prepare complete order data for email
+      const emailOrderData = {
+        ...orderResult,
+        // Add computed fields for email template
+        paidAt: new Date().toISOString(), // Use current time since order just created
+        xenditPaymentData: {
+          paymentMethod: 'Xendit Payment Gateway'
+        }
+      };
+      
+      console.log("📧 Email order data:", {
+        orderId: emailOrderData.orderId,
+        email: emailOrderData.email,
+        name: emailOrderData.name,
+        productCount: emailOrderData.products?.length
+      });
+      
+      // Send the email
+      const emailResult = await sendOrderConfirmationEmail(emailOrderData);
+      console.log("✅ Order confirmation email sent successfully:", emailResult);
+      
+      // Update email status in the order
+      await sanityAdminClient
+        .patch(orderResult._id)
+        .set({
+          'emailStatus.orderConfirmationSent': true,
+          emailSentAt: new Date().toISOString(),
+          brevoMessageId: emailResult.messageId
+        })
+        .commit();
+        
+      console.log("✅ Email status updated in order");
+      
+    } catch (emailError) {
+      console.error("❌ Failed to send order confirmation email:", emailError);
+      console.error("❌ Email error details:", emailError.message);
+      
+      // Update email status to failed but don't fail the entire checkout
+      try {
+        await sanityAdminClient
+          .patch(orderResult._id)
+          .set({
+            'emailStatus.orderConfirmationSent': false,
+            'emailStatus.errorMessage': emailError.message,
+            emailFailedAt: new Date().toISOString()
+          })
+          .commit();
+      } catch (updateError) {
+        console.error("Failed to update email error status:", updateError);
+      }
+      
+      // Continue with checkout even if email fails
+      console.log("⚠️ Continuing with checkout despite email failure");
+    }
+    
+    // Create Xendit Invoice (without webhook dependency for email)
     try {
       console.log("Creating Xendit invoice for order:", orderResult._id);
       
@@ -365,7 +421,7 @@ export async function POST(request) {
         amount: finalTotal,
         description: `Order #${orderId} - MRKT Vape`,
         payerEmail: user.email,
-        customerName: shippingInfo.fullName, // Use shipping name
+        customerName: shippingInfo.fullName,
         currency: "IDR",
         reminderTime: 1,
         successRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success?order_id=${orderResult._id}`,
@@ -395,7 +451,7 @@ export async function POST(request) {
         data: invoiceRequest,
       });
 
-      console.log("Xendit invoice created successfully:", invoice.id);
+      console.log("✅ Xendit invoice created successfully:", invoice.id);
 
       // Update order with Xendit invoice ID and URL
       await sanityAdminClient
@@ -428,10 +484,11 @@ export async function POST(request) {
         invoice_url: invoice.invoiceUrl,
         xendit_invoice_id: invoice.id,
         order_number: orderId,
-        // DEBUG: Include SKU info in response for verification
+        email_sent: true, // Indicate email was sent
         debug: {
           skusFetched: transformedProducts.length,
-          productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`)
+          productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`),
+          emailAttempted: true
         }
       });
 

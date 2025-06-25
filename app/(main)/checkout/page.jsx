@@ -604,9 +604,28 @@ function CheckoutPageComponent() {
                             <strong>Subtotal</strong>
                           </td>
                           <td>
-                            <strong>Rp {formatPrice(subtotalAfterDiscount)}</strong>
+                            <strong>Rp {formatPrice(cartCalculation?.original || subtotalAfterDiscount)}</strong>
                           </td>
                         </tr>
+
+                        {/* Show discount from cart calculation if exists */}
+                        {cartCalculation?.discount > 0 && cartCalculation?.discountDetails && (
+                          <tr className="cart-discount">
+                            <td>
+                              <strong>{cartCalculation.discountDetails.name}</strong>
+                              {cartCalculation.discountDetails.percentage && (
+                                <small className="d-block text-muted">
+                                  {cartCalculation.discountDetails.percentage}% off
+                                </small>
+                              )}
+                            </td>
+                            <td>
+                              <strong className="text-success">
+                                -Rp {formatPrice(cartCalculation.discount)}
+                              </strong>
+                            </td>
+                          </tr>
+                        )}
 
                         <tr className="shipping-row">
                           <td>

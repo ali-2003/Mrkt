@@ -1,6 +1,6 @@
-// app/api/webhooks/xendit/route.js
 import { NextResponse } from "next/server";
 import { sanityAdminClient } from "@/sanity/lib/client";
+import { sendOrderConfirmationEmail } from "@/utils/brevoEmail"; // Add this import
 
 export async function POST(request) {
   try {
@@ -48,7 +48,7 @@ async function handlePaymentSuccess(webhookData) {
   try {
     const orderId = webhookData.external_id;
     
-    // Update order status in Sanity using new schema
+    // First, update order status in Sanity
     await sanityAdminClient
       .patch(orderId)
       .set({
@@ -66,13 +66,64 @@ async function handlePaymentSuccess(webhookData) {
       })
       .commit();
 
-    console.log(`Order ${orderId} marked as paid`);
+    console.log(`✅ Order ${orderId} marked as paid`);
 
-    // Here you could add additional logic like:
-    // - Send confirmation email
-    // - Update inventory
-    // - Trigger fulfillment process
-    
+    // **NEW: Send order confirmation email**
+    try {
+      // Fetch complete order data for email
+      const orderData = await sanityAdminClient.fetch(`
+        *[_type == 'order' && _id == $orderId][0]{
+          ...,
+          products[]{
+            name,
+            productType,
+            quantity,
+            price,
+            totalPrice,
+            shippingSku,
+            colorShippingSku,
+            cartId,
+            selectedColor
+          }
+        }
+      `, { orderId });
+
+      if (orderData) {
+        // Send email using Brevo
+        await sendOrderConfirmationEmail(orderData);
+        
+        // Update email status in order
+        await sanityAdminClient
+          .patch(orderId)
+          .set({
+            'emailStatus.paymentSuccessSent': true,
+            'emailStatus.orderConfirmationSent': true,
+            emailSentAt: new Date().toISOString()
+          })
+          .commit();
+          
+        console.log('✅ Order confirmation email sent successfully');
+      } else {
+        console.error('❌ Order not found for email sending:', orderId);
+      }
+    } catch (emailError) {
+      console.error('❌ Failed to send confirmation email:', emailError);
+      
+      // Update email status to failed but don't fail the webhook
+      try {
+        await sanityAdminClient
+          .patch(orderId)
+          .set({
+            'emailStatus.paymentSuccessSent': false,
+            'emailStatus.errorMessage': emailError.message,
+            emailFailedAt: new Date().toISOString()
+          })
+          .commit();
+      } catch (updateError) {
+        console.error('Failed to update email error status:', updateError);
+      }
+    }
+
   } catch (error) {
     console.error('Error handling payment success:', error);
     throw error;
@@ -82,7 +133,6 @@ async function handlePaymentSuccess(webhookData) {
 async function handlePaymentExpired(webhookData) {
   try {
     const orderId = webhookData.external_id;
-    
     await sanityAdminClient
       .patch(orderId)
       .set({
@@ -91,7 +141,6 @@ async function handlePaymentExpired(webhookData) {
         expiredAt: new Date().toISOString()
       })
       .commit();
-
     console.log(`Order ${orderId} marked as expired`);
   } catch (error) {
     console.error('Error handling payment expiry:', error);
@@ -102,7 +151,6 @@ async function handlePaymentExpired(webhookData) {
 async function handlePaymentFailed(webhookData) {
   try {
     const orderId = webhookData.external_id;
-    
     await sanityAdminClient
       .patch(orderId)
       .set({
@@ -112,7 +160,6 @@ async function handlePaymentFailed(webhookData) {
         failureReason: webhookData.failure_reason || 'Payment failed'
       })
       .commit();
-
     console.log(`Order ${orderId} marked as failed`);
   } catch (error) {
     console.error('Error handling payment failure:', error);

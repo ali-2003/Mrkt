@@ -1,3 +1,4 @@
+// app/cart/page.js
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -30,12 +31,11 @@ function CartPageComponent() {
   const cart = useSelector((state) => state.cart);
   const { items, discount } = cart;
 
-  // Check if user is business account (FIXED: use accountType)
+  // Check if user is business account
   const isBusinessUser = session?.user?.accountType === 'business';
 
   // Enhanced function to get the correct cart image
   const getCartImage = (item) => {
-    // Priority: cartImage > selectedColor first image > regular pictures
     if (item.cartImage) {
       return urlFor(item.cartImage).url();
     } else if (item.selectedColor?.pictures && item.selectedColor.pictures[0]) {
@@ -43,7 +43,7 @@ function CartPageComponent() {
     } else if (item.pictures && item.pictures.length > 0) {
       return urlFor(item.pictures[0]).url();
     }
-    return '/placeholder-image.jpg'; // Fallback
+    return '/placeholder-image.jpg';
   };
 
   // Enhanced function to get display name with color
@@ -61,18 +61,8 @@ function CartPageComponent() {
     return item.originalProduct?.name || item.originalName || item.name;
   };
 
-  // CRITICAL FIX: Get the actual price that was stored when item was added to cart
+  // Get the actual price that was stored when item was added to cart
   const getStoredItemPrice = (item) => {
-    console.log("Getting price for:", item.name, {
-      effectivePrice: item.effectivePrice,
-      unitPrice: item.unitPrice,
-      isBusinessUser: item.isBusinessUser,
-      business_price: item.business_price,
-      sale_price: item.sale_price,
-      price: item.price
-    });
-
-    // Priority order for getting the correct stored price
     if (item.effectivePrice) {
       return item.effectivePrice;
     }
@@ -81,7 +71,6 @@ function CartPageComponent() {
       return item.unitPrice;
     }
 
-    // Fallback: recalculate based on stored context
     if (item.isBusinessUser && item.business_price) {
       return item.business_price;
     }
@@ -113,139 +102,92 @@ function CartPageComponent() {
     }
   };
 
-  // Function to calculate the subtotal using stored prices
-  const calculateSubtotal = () => {
-    if (!items || !Array.isArray(items) || items.length === 0) return 0;
-    
-    return items.reduce((total, item) => {
-      if (item && typeof item.sum === 'number') {
-        return total + item.sum;
-      }
-      // Fallback calculation using stored price
-      if (item) {
-        const storedPrice = getStoredItemPrice(item);
-        const qty = item.qty || 1;
-        return total + (storedPrice * qty);
-      }
-      return total;
-    }, 0);
-  };
-
-  // Function to count product types
-  const countProductTypes = (items, productType) => {
-    if (!items || !Array.isArray(items)) return 0;
-    return items.filter(item => item?.productType === productType)
-      .reduce((count, item) => count + (item.qty || 1), 0);
-  };
-
-  // Function to count products by name/type (for different devices)
-  const countProductsByType = (items, type) => {
-    if (!items || !Array.isArray(items)) return 0;
-    return items.filter(item => {
-      const productName = (item.name || '').toLowerCase();
-      const productType = (item.productType || '').toLowerCase();
-      return productName.includes(type.toLowerCase()) || productType.includes(type.toLowerCase());
-    }).reduce((count, item) => count + (item.qty || 1), 0);
-  };
-
-  // Function to calculate total for a product type using stored prices
-  const getProductTypeTotal = (items, productType) => {
-    if (!items || !Array.isArray(items)) return 0;
-    return items
-      .filter(item => item?.productType === productType)
-      .reduce((total, item) => {
-        // Use the stored sum or calculate from stored price
-        if (item.sum) return total + item.sum;
-        return total + (getStoredItemPrice(item) * (item.qty || 1));
-      }, 0);
-  };
-
-  // Function to check if discounts are eligible (FIXED: use accountType)
-  const isEligibleForDiscounts = () => {
-    return !session || session?.user?.accountType !== 'business';
-  };
-
-  // Check if cart has specific device types
-  const hasAryaPrimeDevice = () => {
-    return items.some(item => {
-      const productName = (item.name || '').toLowerCase();
-      const productType = (item.productType || '').toLowerCase();
-      return productName.includes('arya prime') || productType.includes('aryaprime') || productType.includes('arya_prime');
-    });
-  };
-
-  const hasPodPack = () => {
-    return items.some(item => {
-      const productName = (item.name || '').toLowerCase();
-      const productType = (item.productType || '').toLowerCase();
-      return (productName.includes('pod') && !productName.includes('arya prime')) || productType === 'pod';
-    });
-  };
-
-  // Count number of bottles in cart
-  const getBottleCount = () => {
-    return countProductTypes(items, 'bottle');
-  };
-
-  // UPDATED: Create a single source of truth for discount calculation with corrected bundles
-  const calculateDiscount = async (cartItems, manualDiscount = null) => {
-    if (!cartItems || cartItems.length === 0) return null;
+  // FIXED: Use EXACT same discount calculation logic as checkout page
+  const calculateCartTotals = async () => {
+    if (!items || items.length === 0) return null;
 
     try {
-      // Ensure all items have necessary properties using stored prices
-      const validItems = cartItems.map(item => ({
+      // Get user data for first order discount calculation
+      const getUserDataForDiscount = async () => {
+        if (!session?.user?.email) return null;
+        try {
+          const userData = await client.fetch(
+            `*[_type == 'user' && email == $email][0]{
+              ...,
+              "orderCount": count(*[_type == 'order' && email == $email]), 
+              "lifetimeSpend": sum(*[_type == 'order' && email == $email].totalPrice)
+            }`,
+            { email: session.user.email }
+          );
+          return userData || { orderCount: 0, lifetimeSpend: 0 };
+        } catch (err) {
+          console.error("Error fetching user data:", err);
+          return { orderCount: 0, lifetimeSpend: 0 };
+        }
+      };
+
+      // Ensure all items have necessary properties
+      const validItems = items.map(item => ({
         ...item,
         qty: item.qty || 1,
-        sum: typeof item.sum === 'number' ? item.sum : (getStoredItemPrice(item) * (item.qty || 1)),
+        sum: typeof item.sum === 'number' ? item.sum : (item.sale_price || item.price || 0) * (item.qty || 1),
         productType: item.productType
       }));
 
-      // Calculate base subtotal using stored prices
+      // Calculate base subtotal
       const subtotal = validItems.reduce((total, item) => total + item.sum, 0);
 
-      // If there's a manual discount, apply it
-      if (manualDiscount && manualDiscount.percentage) {
-        const discountAmount = subtotal * (manualDiscount.percentage / 100);
+      // If there's a manual discount applied, use it
+      if (discount && discount.percentage) {
+        const discountAmount = subtotal * (discount.percentage / 100);
         return {
           original: subtotal,
           discount: discountAmount,
           total: subtotal - discountAmount,
           discountDetails: {
-            name: manualDiscount.name || "Diskon",
-            percentage: manualDiscount.percentage,
+            name: discount.name || "Diskon",
+            percentage: discount.percentage,
             amount: discountAmount,
-            message: `Diskon ${manualDiscount.percentage}% diterapkan`
+            type: discount.type
           }
         };
       }
 
-      // Initialize variables for bundles 
-      const bottleCount = countProductTypes(validItems, 'bottle');
-      const hasAryaPrime = hasAryaPrimeDevice();
-      const hasPod = hasPodPack();
-      const bottleTotal = getProductTypeTotal(validItems, 'bottle');
-
-      // Initialize best discount
-      let bestDiscount = {
-        amount: 0,
-        details: null
+      // Otherwise check for automatic discounts
+      const userDataObj = await getUserDataForDiscount();
+      
+      // Helper functions
+      const countProductTypes = (items, productType) => {
+        return items.filter(item => item?.productType === productType)
+          .reduce((count, item) => count + (item.qty || 1), 0);
+      };
+      
+      const getProductTypeTotal = (items, productType) => {
+        return items
+          .filter(item => item?.productType === productType)
+          .reduce((total, item) => total + (item.sum || 0), 0);
+      };
+      
+      const isEligibleForDiscounts = () => {
+        return !session || session?.user?.type !== 'business';
       };
 
-      // Get user data if logged in
-      const userDataObj = await getUserData();
-      
+      const bottleCount = countProductTypes(validItems, 'bottle');
+      const hasPodDevice = countProductTypes(validItems, 'pod') > 0;
+      const bottleTotal = getProductTypeTotal(validItems, 'bottle');
+
+      let bestDiscount = { amount: 0, details: null };
+
       // Check for first order discount (logged in users only)
       if (session?.user && userDataObj?.orderCount === 0) {
-        const discountAmount = subtotal * 0.15; // 15% first order discount
-        
+        const discountAmount = subtotal * 0.2; // 20% first order discount
         if (discountAmount > bestDiscount.amount) {
           bestDiscount = {
             amount: discountAmount,
             details: {
               name: "Diskon Pesanan Pertama",
-              percentage: 15,
+              percentage: 15, // Display as 15% but calculate 20%
               amount: discountAmount,
-              message: "Diskon 15% untuk pesanan pertama",
               type: "first"
             }
           };
@@ -254,71 +196,54 @@ function CartPageComponent() {
 
       // If not a business account, check for bundle discounts
       if (isEligibleForDiscounts()) {
-        // UPDATED BUNDLE DISCOUNTS:
-        
-        // Arya Prime + 3 bottles: 35% off
-        if (hasAryaPrime && bottleCount >= 3) {
-          const discountAmount = bottleTotal * 0.35;
-          
+        if (hasPodDevice && bottleCount >= 3) {
+          const discountAmount = bottleTotal * 0.5;
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Diskon Bundle Arya Prime",
-                percentage: 35,
+                name: "Diskon Bundle",
+                percentage: 50,
                 amount: discountAmount,
-                message: `Arya Prime + ${bottleCount} botol: 35% off botol`,
                 type: "bundle"
               }
             };
           }
-        }
-        // Pod Pack + 3 bottles: 30% off bottles
-        else if (hasPod && bottleCount >= 3) {
+        } else if (hasPodDevice && bottleCount > 0) {
           const discountAmount = bottleTotal * 0.3;
-          
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Diskon Bundle Pod Pack",
+                name: "Diskon Bundle", 
                 percentage: 30,
                 amount: discountAmount,
-                message: `Pod Pack + ${bottleCount} botol: 30% off botol`,
                 type: "bundle"
               }
             };
           }
-        }
-        // Arya Prime Device + 1 bottle: 15% off
-        else if (hasAryaPrime && bottleCount >= 1) {
-          const discountAmount = bottleTotal * 0.15;
-          
+        } else if (bottleCount >= 5) {
+          const discountAmount = bottleTotal * 0.3;
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Diskon Bundle Arya Prime",
-                percentage: 15,
+                name: "Diskon Volume",
+                percentage: 30,
                 amount: discountAmount,
-                message: `Arya Prime + botol: 15% off botol`,
-                type: "bundle"
+                type: "volume"
               }
             };
           }
-        }
-        // 3 bottles: 20% off (standalone without devices)
-        else if (!hasAryaPrime && !hasPod && bottleCount >= 3) {
+        } else if (bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.2;
-          
           if (discountAmount > bestDiscount.amount) {
             bestDiscount = {
               amount: discountAmount,
               details: {
-                name: "Diskon Volume Botol",
+                name: "Diskon Volume",
                 percentage: 20,
                 amount: discountAmount,
-                message: `Bundle ${bottleCount} botol: 20% off`,
                 type: "volume"
               }
             };
@@ -343,12 +268,10 @@ function CartPageComponent() {
         total: subtotal,
         discountDetails: null
       };
+
     } catch (error) {
       console.error("Error in discount calculation:", error);
-      const subtotal = Array.isArray(cartItems) 
-        ? cartItems.reduce((total, item) => total + (item?.sum || 0), 0)
-        : 0;
-      
+      const subtotal = items.reduce((total, item) => total + (item?.sum || 0), 0);
       return {
         original: subtotal,
         discount: 0,
@@ -358,25 +281,66 @@ function CartPageComponent() {
     }
   };
 
-  // CRITICAL FIX: Use a single useEffect to update the cart calculation
+  // Function to calculate the subtotal using stored prices
+  const calculateSubtotal = () => {
+    if (!items || !Array.isArray(items) || items.length === 0) return 0;
+    
+    return items.reduce((total, item) => {
+      if (item && typeof item.sum === 'number') {
+        return total + item.sum;
+      }
+      if (item) {
+        const storedPrice = getStoredItemPrice(item);
+        const qty = item.qty || 1;
+        return total + (storedPrice * qty);
+      }
+      return total;
+    }, 0);
+  };
+
+  // Check if cart has specific device types
+  const hasAryaPrimeDevice = () => {
+    return items.some(item => {
+      const productName = (item.name || '').toLowerCase();
+      const productType = (item.productType || '').toLowerCase();
+      return productName.includes('arya prime') || productType.includes('aryaprime') || productType.includes('arya_prime');
+    });
+  };
+
+  const hasPodPack = () => {
+    return items.some(item => {
+      const productName = (item.name || '').toLowerCase();
+      const productType = (item.productType || '').toLowerCase();
+      return (productName.includes('pod') && !productName.includes('arya prime')) || productType === 'pod';
+    });
+  };
+
+  // Count number of bottles in cart
+  const getBottleCount = () => {
+    return items.filter(item => item?.productType === 'bottle')
+      .reduce((count, item) => count + (item.qty || 1), 0);
+  };
+
+  // Function to check if discounts are eligible
+  const isEligibleForDiscounts = () => {
+    return !session || session?.user?.accountType !== 'business';
+  };
+
+  // FIXED: Use the checkout page calculation
   useEffect(() => {
-    // Don't proceed if cart is empty
     if (!items?.length) {
       setCartCalculation(null);
       return;
     }
 
-    // Set loading state to prevent unnecessary recalculations
     setLoading(true);
 
-    // Calculate discount using stored prices
-    calculateDiscount(items, discount)
+    calculateCartTotals()
       .then(calculation => {
         setCartCalculation(calculation);
       })
       .catch(error => {
         console.error("Error calculating discount:", error);
-        // Fallback to basic calculation using stored prices
         const subtotal = calculateSubtotal();
         setCartCalculation({
           original: subtotal,
@@ -391,14 +355,12 @@ function CartPageComponent() {
 
   }, [items, session?.user, discount]);
 
-  // User data loading
   useEffect(() => {
     if (session?.user) {
       getUserData().then(data => setUserData(data));
     }
   }, [session?.user]);
 
-  // Change item quantity
   function changeQty(value, index) {
     const item = items[index];
     if (item) {
@@ -406,7 +368,6 @@ function CartPageComponent() {
     }
   }
 
-  // Handle discount code application
   const handleDiscount = async () => {
     try {
       if (discount) {
@@ -421,7 +382,6 @@ function CartPageComponent() {
       
       setLoading(true);
 
-      // For testing - apply a hard-coded discount
       if (code === "TEST") {
         const testDiscount = {
           code: "TEST",
@@ -436,12 +396,10 @@ function CartPageComponent() {
         return;
       }
 
-      // Check for discount codes in the database
       const res = await client.fetch(`*[_type == 'discount' && code=='${code}' && (email == '${session?.user?.email}' || email == null)] {
         ...
       }`);
 
-      // If no discount found, check if it's a referral code
       if (!res?.length) {
         const referralCheck = await client.fetch(`*[_type == 'user' && referralCode=='${code}' && email != '${session?.user?.email}'][0]`);
         
@@ -464,7 +422,6 @@ function CartPageComponent() {
         return;
       }
 
-      // Apply database discount to Redux
       dispatch(applyDiscount(res[0]));
       toast.success("Diskon diterapkan!");
     } catch (err) {
@@ -476,7 +433,6 @@ function CartPageComponent() {
     }
   };
 
-  // Update cart animation
   function updateCart(e) {
     let button = e.currentTarget;
     button.querySelector(".icon-refresh").classList.add("load-more-rotating");
@@ -488,7 +444,6 @@ function CartPageComponent() {
     }, 400);
   }
 
-  // Handle checkout
   const handleCheckout = (e) => {
     e.preventDefault();
     
@@ -510,7 +465,6 @@ function CartPageComponent() {
     }
   };
 
-  // Format price with locale
   const formatPrice = (price) => {
     return price.toLocaleString('id-ID', {
       minimumFractionDigits: 0,
@@ -518,12 +472,10 @@ function CartPageComponent() {
     });
   };
 
-  // Handle removing a discount
   const handleRemoveDiscount = () => {
     dispatch(removeDiscount());
   };
 
-  // Get display subtotal and discount totals from cartCalculation
   const getDisplaySubtotal = () => {
     return cartCalculation?.original || calculateSubtotal();
   };
@@ -593,7 +545,6 @@ function CartPageComponent() {
                                   )}
                                 </h4>
                                 
-                                {/* Color information display */}
                                 {item.selectedColor && (
                                   <div className="product-color-info" style={{
                                     display: 'flex',
@@ -624,7 +575,6 @@ function CartPageComponent() {
                                   </div>
                                 )}
 
-                                {/* Business pricing indicator */}
                                 {item.isBusinessUser && (
                                   <div className="business-price-info" style={{
                                     fontSize: '12px',
@@ -636,7 +586,6 @@ function CartPageComponent() {
                                   </div>
                                 )}
 
-                                {/* Stock info for colored products */}
                                 {item.selectedColor?.stock && (
                                   <div className="stock-info" style={{
                                     fontSize: '12px',
@@ -654,7 +603,6 @@ function CartPageComponent() {
                           </td>
 
                           <td className="price-col">
-                            {/* CRITICAL FIX: Use stored price */}
                             Rp {formatPrice(getStoredItemPrice(item))}
                           </td>
 
@@ -755,16 +703,14 @@ function CartPageComponent() {
                           </td>
                         </tr>
                         
+                        {/* FIXED: Shows discount exactly like checkout page */}
                         {cartCalculation?.discount > 0 && cartCalculation?.discountDetails && (
                           <tr className="summary-shipping">
                             <td className="py-0">
-                              Diskon
-                              {cartCalculation.discountDetails.name || discount?.name || "Diskon"}
+                              {cartCalculation.discountDetails.name}
                               {cartCalculation.discountDetails.percentage 
-                                ? ` - ${cartCalculation.discountDetails.percentage}%` 
-                                : discount?.percentage ? ` - ${discount.percentage}%` : ''}
-                              {cartCalculation.discountDetails.message && 
-                                <small className="d-block text-muted">{cartCalculation.discountDetails.message}</small>}
+                                ? ` (${cartCalculation.discountDetails.percentage}%)` 
+                                : ''}
                             </td>
                             <td className="text-[#ef837b] py-0">
                               - Rp {formatPrice(cartCalculation.discount)}
@@ -788,7 +734,6 @@ function CartPageComponent() {
                       </tbody>
                     </table>
 
-                    {/* UPDATED: Display eligible discounts info for customers */}
                     {isEligibleForDiscounts() && items.length > 0 && !cartCalculation?.discountDetails && (
                       <div className="alert alert-info pb-1 pt-1 mb-2 mt-2">
                         <small>

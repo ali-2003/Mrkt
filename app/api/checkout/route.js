@@ -356,21 +356,39 @@ export async function POST(request) {
     try {
       console.log("📧 Sending order confirmation email immediately...");
       
-      // Prepare complete order data for email
+      // 🎯 ENHANCED: Prepare complete order data for email with product images
       const emailOrderData = {
         ...orderResult,
         // Add computed fields for email template
         paidAt: new Date().toISOString(), // Use current time since order just created
         xenditPaymentData: {
           paymentMethod: 'Xendit Payment Gateway'
-        }
+        },
+        // 🖼️ ADD PRODUCT IMAGES AND ENHANCED PRODUCT DATA FOR EMAIL
+        products: enrichedItems.map(item => {
+          const productName = item.name + (item.selectedColor?.colorName ? ` - ${item.selectedColor.colorName}` : '');
+          const finalSKU = item.colorShippingSku || item.shippingSku || 'N/A';
+          
+          return {
+            name: productName,
+            category: item.productType || 'Product',
+            skuNo: finalSKU,  // Use the most specific SKU available
+            quantity: item.qty || 1,
+            price: `Rp.${Math.round(item.sum || 0).toLocaleString('id-ID')}`,
+            imageUrl: getProductImageUrl(item) // 🎯 FIXED: Add actual product image
+          };
+        })
       };
       
       console.log("📧 Email order data:", {
         orderId: emailOrderData.orderId,
         email: emailOrderData.email,
         name: emailOrderData.name,
-        productCount: emailOrderData.products?.length
+        productCount: emailOrderData.products?.length,
+        hasDiscount: !!(cartCalculation?.discount > 0),
+        discountAmount: cartCalculation?.discount || 0,
+        shippingCost: shippingCost,
+        productsWithImages: emailOrderData.products.map(p => ({ name: p.name, imageUrl: p.imageUrl, sku: p.skuNo }))
       });
       
       // Send the email
@@ -411,27 +429,68 @@ export async function POST(request) {
       console.log("⚠️ Continuing with checkout despite email failure");
     }
     
-    // Create Xendit Invoice (without webhook dependency for email)
+    // 🔥 FIXED: Create Xendit Invoice with validation-safe format
     try {
       console.log("Creating Xendit invoice for order:", orderResult._id);
       
       const { Invoice } = xendit;
+      
+      // Build safe items array (NO negative prices - Xendit doesn't allow them)
+      const invoiceItems = [];
+      
+      // Add all products
+      transformedProducts.forEach(item => {
+        // Ensure all required fields are present and valid
+        const itemName = item.name + (item.selectedColor ? ` - ${item.selectedColor.colorName}` : '');
+        const itemQuantity = parseInt(item.quantity) || 1;
+        const itemPrice = Math.round(parseFloat(item.price) || 0);
+        
+        if (itemPrice > 0) { // Only add items with positive prices
+          invoiceItems.push({
+            name: itemName.substring(0, 255), // Xendit has character limits
+            quantity: itemQuantity,
+            price: itemPrice,
+            category: (item.productType || 'product').substring(0, 50)
+          });
+        }
+      });
+      
+      // Add shipping cost as separate line item if > 0
+      if (shippingCost > 0) {
+        invoiceItems.push({
+          name: `Ongkos Kirim - ${formattedShippingInfo.province}`.substring(0, 255),
+          quantity: 1,
+          price: Math.round(parseFloat(shippingCost)),
+          category: 'shipping'
+        });
+      }
+      
+      // DON'T add discount as line item - handle in description instead
+      let invoiceDescription = `Order #${orderId} - MRKT Vape`;
+      if (cartCalculation?.discount > 0 && cartCalculation?.discountDetails) {
+        invoiceDescription += ` (${cartCalculation.discountDetails.name} diterapkan)`;
+      }
+      
+      // Validate final total
+      const validatedFinalTotal = Math.round(parseFloat(finalTotal));
+      if (validatedFinalTotal <= 0) {
+        throw new Error("Invalid final total amount");
+      }
+      
       const invoiceRequest = {
         externalId: orderResult._id,
-        amount: finalTotal,
-        description: `Order #${orderId} - MRKT Vape`,
+        amount: validatedFinalTotal,
+        description: invoiceDescription.substring(0, 255),
         payerEmail: user.email,
-        customerName: shippingInfo.fullName,
+        customerName: shippingInfo.fullName.substring(0, 255),
         currency: "IDR",
         reminderTime: 1,
         successRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success?order_id=${orderResult._id}`,
         failureRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/failed?order_id=${orderResult._id}`,
-        items: transformedProducts.map(item => ({
-          name: item.name + (item.selectedColor ? ` - ${item.selectedColor.colorName}` : ''),
-          quantity: item.quantity,
-          price: item.price,
-          category: item.productType
-        })),
+        
+        // Safe items array (no negative prices)
+        items: invoiceItems,
+        
         customerNotificationPreference: {
           invoiceCreated: ["email"],
           invoicePaid: ["email"],
@@ -440,12 +499,23 @@ export async function POST(request) {
         invoiceDuration: 86400, // 24 hours
       };
 
-      console.log("Invoice request:", {
+      // Validate invoice request before sending
+      console.log("Validated Invoice request:", {
         externalId: invoiceRequest.externalId,
         amount: invoiceRequest.amount,
         currency: invoiceRequest.currency,
-        payerEmail: invoiceRequest.payerEmail
+        payerEmail: invoiceRequest.payerEmail,
+        itemsCount: invoiceItems.length,
+        hasShipping: shippingCost > 0,
+        hasDiscount: cartCalculation?.discount > 0
       });
+
+      console.log("Safe invoice items breakdown:", invoiceItems.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        category: item.category
+      })));
 
       const invoice = await Invoice.createInvoice({
         data: invoiceRequest,
@@ -488,17 +558,27 @@ export async function POST(request) {
         debug: {
           skusFetched: transformedProducts.length,
           productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`),
-          emailAttempted: true
+          emailAttempted: true,
+          invoiceItemsCount: invoiceItems.length,
+          hasShipping: shippingCost > 0,
+          hasDiscount: cartCalculation?.discount > 0,
+          finalTotal: validatedFinalTotal,
+          productImagesIncluded: true
         }
       });
 
     } catch (xenditError) {
-      console.error("Xendit error details:", {
+      console.error("❌ Xendit error details:", {
         message: xenditError.message,
         status: xenditError.status,
         errorCode: xenditError.errorCode,
         response: xenditError.response
       });
+      
+      // Log more detailed error info
+      if (xenditError.response?.errors) {
+        console.error("❌ Xendit validation errors:", xenditError.response.errors);
+      }
       
       // Update order status to failed
       await sanityAdminClient
@@ -515,7 +595,8 @@ export async function POST(request) {
         { 
           success: false, 
           message: "Payment processing failed. Please try again or contact support.",
-          error: xenditError.errorCode || "PAYMENT_ERROR"
+          error: xenditError.errorCode || "PAYMENT_ERROR",
+          details: xenditError.response?.errors || []
         },
         { status: 500 }
       );

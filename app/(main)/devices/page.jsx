@@ -1,3 +1,4 @@
+// page.jsx - FIXED VERSION
 import ProductShowcasePage from './_components'
 import { client } from '@/sanity/lib/client'
 
@@ -36,6 +37,8 @@ const fetchData = async () => {
         "image": image.asset->url
       },
       price,
+      sale_price,
+      business_price,
       originalPrice,
       rating,
       reviews[]{
@@ -66,12 +69,16 @@ const fetchData = async () => {
         slug,
         "mainImage": mainImage.asset->url,
         price,
+        sale_price,
+        business_price,
         originalPrice
       }
     }`)
+    
+    console.log('📊 Fetched device data:', JSON.stringify(res, null, 2));
     return res
   } catch (err) {
-    console.log(err)
+    console.error('❌ Error fetching device data:', err)
     return []
   }
 }
@@ -83,6 +90,14 @@ const PodCategoryPage = async () => {
   // If you have only one device, pass it directly to showcase
   // If you have multiple devices, you might want to show the first one or create a selection
   const mainDevice = devices && devices.length > 0 ? devices[0] : null
+  
+  console.log('📊 Main device passed to component:', mainDevice ? {
+    name: mainDevice.name,
+    price: mainDevice.price,
+    sale_price: mainDevice.sale_price,
+    business_price: mainDevice.business_price,
+    originalPrice: mainDevice.originalPrice
+  } : 'No device found');
   
   return (
     <ProductShowcasePage

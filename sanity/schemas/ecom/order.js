@@ -46,60 +46,52 @@ export const order = {
       type: "number",
       initialValue: 0
     },
+   // Replace your discount field in the order schema with this:
+
+{
+  name: "discount",
+  title: "Applied Discount", 
+  type: "object",
+  validation: Rule => Rule.optional(), // 🎯 ADD THIS LINE - allows null values
+  fields: [
     {
-      name: "discount",
-      title: "Discount",
-      type: "object",
-      fields: [
-        {
-          name: "name",
-          title: "Discount Name",
-          type: "string",
-        },
-        {
-          name: "code",
-          title: "Discount Code",
-          type: "string",
-        },
-        {
-          name: "percentage",
-          title: "Discount Percentage",
-          type: "number",
-        },
-        {
-          name: "amount",
-          title: "Discount Amount",
-          type: "number",
-        },
-        {
-          name: "email",
-          title: "Referrer Email",
-          description: "Email ID of User (only applicable if it is a referral code)",
-          type: "string",
-        },
-        {
-          name: "type",
-          title: "Discount Type",
-          type: 'string',
-          options: {
-            list: [
-              { title: 'First Order', value: 'first' },
-              { title: 'Referral', value: 'referral' },
-              { title: 'Bundle Discount', value: 'bundle' },
-              { title: 'Volume Discount', value: 'volume' },
-              { title: 'Test Discount', value: 'test' },
-              { title: 'Custom Code', value: 'custom' },
-            ],
-          },
-        },
-        {
-          name: "message",
-          title: "Discount Message",
-          type: "string",
-        }
-      ],
-      validation: Rule => Rule.optional()
+      name: "name",
+      title: "Discount Name",
+      type: "string",
     },
+    {
+      name: "code", 
+      title: "Discount Code",
+      type: "string",
+    },
+    {
+      name: "percentage",
+      title: "Discount Percentage", 
+      type: "number",
+    },
+    {
+      name: "amount", // 🎯 This is the field your email needs
+      title: "Discount Amount",
+      type: "number",
+    },
+    {
+      name: "email",
+      title: "Referral Email",
+      type: "string", 
+    },
+    {
+      name: "type",
+      title: "Discount Type",
+      type: "string",
+    },
+    {
+      name: "message",
+      title: "Discount Message", 
+      type: "string",
+    }
+  ]
+},
+    
     {
       name: "totalPrice",
       title: "Total Price",

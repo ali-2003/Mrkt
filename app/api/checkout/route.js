@@ -1,4 +1,4 @@
-// app/api/checkout/route.js
+// app/api/checkout/route.js - COMPLETE FIXED VERSION
 import { NextResponse } from "next/server";
 import { sanityAdminClient } from "@/sanity/lib/client";
 import { calculateCartTotal } from "@/utils/discountValue";
@@ -199,6 +199,17 @@ export async function POST(request) {
       }
     }
     
+    // Add debug logging for discount values before order creation
+    console.log("💰 DISCOUNT DEBUG BEFORE ORDER CREATION:", {
+      hasOriginalDiscount: !!discount,
+      discountCode: discount?.code,
+      discountType: discount?.type,
+      cartCalculationDiscount: cartCalculation.discount,
+      cartCalculationDiscountDetails: cartCalculation.discountDetails,
+      cartCalculationOriginal: cartCalculation.original,
+      cartCalculationTotal: cartCalculation.total
+    });
+    
     // If this is a first order with discount, or a referral was used,
     // update the user's discount record
     if (userData && ((userData.orderCount === 0 || discount?.type === 'referral') && discount)) {
@@ -293,7 +304,7 @@ export async function POST(request) {
       notes: shippingInfo.notes || ""
     };
     
-    // Create the order with discount information using new schema
+    // 🎯 FIXED: Create the order with proper discount object creation
     const orderData = {
       _type: "order",
       orderId: orderId,
@@ -304,15 +315,19 @@ export async function POST(request) {
       contact: shippingInfo.phone,
       subTotal: cartCalculation.original,
       shippingPrice: shippingCost,
-      discount: discount && cartCalculation.discountDetails ? {
-        name: cartCalculation.discountDetails.name || discount.name,
-        code: discount.code,
-        percentage: cartCalculation.discountDetails.percentage || discount.percentage,
-        amount: cartCalculation.discount,
-        email: discount.email || null,
-        type: discount.type || 'custom',
-        message: cartCalculation.discountDetails.message || ''
+      
+      // 🎯 CRITICAL FIX: Check cartCalculation.discount instead of original discount object
+      // This fixes automatic first-order discounts that don't have a manual discount code
+      discount: (cartCalculation.discount > 0) ? {
+        name: cartCalculation.discountDetails?.name || discount?.name || 'Discount Applied',
+        code: cartCalculation.discountDetails?.code || discount?.code || 'AUTO-DISCOUNT',
+        percentage: cartCalculation.discountDetails?.percentage || discount?.percentage || 0,
+        amount: cartCalculation.discount, // This is the key field!
+        email: discount?.email || null,
+        type: cartCalculation.discountDetails?.type || discount?.type || 'automatic',
+        message: cartCalculation.discountDetails?.message || discount?.message || ''
       } : null,
+      
       totalPrice: finalTotal,
       products: transformedProducts,
       shippingInfo: formattedShippingInfo,
@@ -340,10 +355,21 @@ export async function POST(request) {
       createdAt: new Date().toISOString()
     };
     
+    // Add debug logging to see what's happening with discount
+    console.log("💰 DISCOUNT DEBUG AFTER ORDER CREATION:", {
+      hasOriginalDiscount: !!discount,
+      discountCode: discount?.code,
+      cartCalculationDiscount: cartCalculation.discount,
+      cartCalculationDiscountDetails: cartCalculation.discountDetails,
+      finalDiscountObject: orderData.discount,
+      discountAmount: orderData.discount?.amount
+    });
+    
     console.log("Order data being saved:", {
       orderId: orderData.orderId,
       productCount: orderData.products.length,
       hasDiscount: !!orderData.discount,
+      discountAmount: orderData.discount?.amount,
       shippingInfo: orderData.shippingInfo,
       productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku }))
     });
@@ -387,6 +413,7 @@ export async function POST(request) {
         productCount: emailOrderData.products?.length,
         hasDiscount: !!(cartCalculation?.discount > 0),
         discountAmount: cartCalculation?.discount || 0,
+        savedDiscountAmount: orderResult.discount?.amount,
         shippingCost: shippingCost,
         productsWithImages: emailOrderData.products.map(p => ({ name: p.name, imageUrl: p.imageUrl, sku: p.skuNo }))
       });
@@ -562,6 +589,7 @@ export async function POST(request) {
           invoiceItemsCount: invoiceItems.length,
           hasShipping: shippingCost > 0,
           hasDiscount: cartCalculation?.discount > 0,
+          discountAmount: orderResult.discount?.amount,
           finalTotal: validatedFinalTotal,
           productImagesIncluded: true
         }

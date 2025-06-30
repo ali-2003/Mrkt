@@ -1,4 +1,4 @@
-// utils/brevoEmail.js - UPDATED VERSION WITH FIXES
+// utils/brevoEmail.js - FIXED VERSION
 
 export const sendOrderConfirmationEmail = async (orderData) => {
     try {
@@ -41,10 +41,11 @@ export const sendOrderConfirmationEmail = async (orderData) => {
       
       console.log('📧 Extracted customer first name:', customerFirstName);
       
-      // 🎯 CALCULATE DISCOUNT PROPERLY
-      let discountDisplay = 'Rp.0';
+      // 🎯 FIXED: CALCULATE DISCOUNT PROPERLY
       let discountAmount = 0;
+      let discountDisplay = formatIDR(0); // Default to 0
       
+      // Extract discount amount from the correct location
       if (orderData.discount?.amount && orderData.discount.amount > 0) {
         discountAmount = orderData.discount.amount;
         discountDisplay = `-${formatIDR(discountAmount)}`;
@@ -54,7 +55,8 @@ export const sendOrderConfirmationEmail = async (orderData) => {
         hasDiscount: !!orderData.discount,
         discountAmount: discountAmount,
         discountDisplay: discountDisplay,
-        originalSubtotal: orderData.subTotal
+        originalSubtotal: orderData.subTotal,
+        discountObject: orderData.discount
       });
       
       // Prepare email parameters
@@ -111,6 +113,12 @@ export const sendOrderConfirmationEmail = async (orderData) => {
       };
       
       console.log('📧 === FINAL EMAIL PARAMS ===');
+      console.log('📧 Discount info:', {
+        hasDiscount: !!orderData.discount,
+        discountAmount: discountAmount,
+        discountDisplay: discountDisplay,
+        discountInParams: emailParams.discount
+      });
       console.log(JSON.stringify(emailParams, null, 2));
       
       // Prepare the complete request body for Brevo

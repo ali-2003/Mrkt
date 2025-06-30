@@ -361,6 +361,13 @@ function CartPageComponent() {
     }
   }, [session?.user]);
 
+  // ABANDONMENT EMAIL TRACKING - Track cart status changes
+  useEffect(() => {
+    if (window.abandonmentSystem && items) {
+      window.abandonmentSystem.updateCartStatus(items.length > 0);
+    }
+  }, [items]);
+
   function changeQty(value, index) {
     const item = items[index];
     if (item) {

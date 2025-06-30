@@ -62,6 +62,20 @@ function CheckoutPageComponent() {
     }
   }, [items, router]);
 
+  // ABANDONMENT EMAIL TRACKING - Capture email when user types it
+  useEffect(() => {
+    if (formData.email && formData.email.includes('@')) {
+      window.abandonmentSystem?.setUserEmail(formData.email);
+    }
+  }, [formData.email]);
+
+  // ABANDONMENT EMAIL TRACKING - Track cart status from Redux
+  useEffect(() => {
+    if (window.abandonmentSystem && items) {
+      window.abandonmentSystem.updateCartStatus(items.length > 0);
+    }
+  }, [items]);
+
   // Fetch shipping zones from Sanity
   useEffect(() => {
     const fetchProvinces = async () => {
@@ -375,6 +389,9 @@ function CheckoutPageComponent() {
         throw new Error(data.message || "Checkout gagal");
       }
 
+      // ABANDONMENT EMAIL TRACKING - Mark purchase complete to prevent abandonment emails
+      window.abandonmentSystem?.markPurchaseComplete();
+
       // Clear cart and redirect to Xendit payment page
       dispatch(emptyCart());
       
@@ -463,7 +480,7 @@ function CheckoutPageComponent() {
                         className="form-control"
                         value={formData.phone}
                         onChange={handleInputChange}
-                        placeholder="(+62) 812-3456-7890"
+                        placeholder="(+62) xxx-xxxx-xxxx"
                         required
                       />
                     </div>

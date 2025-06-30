@@ -3,8 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import Qty from "@/components/features/qty";
-
 import { isInWishlist } from "@/utils";
 import Link from "next/link";
 import { addToCart } from "@/redux/slice/cartSlice";
@@ -16,7 +14,6 @@ import { useSession } from "next-auth/react";
 
 function DetailOne(props) {
   const { product, onColorChange } = props;
-  const [qty, setQty] = useState(1);
   const [nicotine, setNicotine] = useState();
   const [currentUrl, setCurrentUrl] = useState("");
   const [shareableContent, setShareableContent] = useState("");
@@ -34,6 +31,19 @@ function DetailOne(props) {
 
   // Check if user is business account
   const isBusinessUser = session?.user?.accountType === 'business';
+  
+  // BUSINESS QUANTITY LOGIC - Set minimum and initial quantity based on user type
+  const getMinQuantity = () => isBusinessUser ? 10 : 1;
+  const getInitialQuantity = () => isBusinessUser ? 10 : 1;
+  
+  // Initialize quantity with appropriate minimum
+  const [qty, setQty] = useState(getInitialQuantity());
+
+  // Update quantity when user type changes (login/logout)
+  useEffect(() => {
+    const initialQty = getInitialQuantity();
+    setQty(initialQty);
+  }, [isBusinessUser]);
 
   // Initialize selected color for pod products and sync with parent
   useEffect(() => {
@@ -110,10 +120,19 @@ function DetailOne(props) {
     return product?.sale_price && !isBusinessUser && product.sale_price < product.price;
   }
 
+  // BUSINESS QUANTITY - Check if there's enough stock for business minimum
+  function hasEnoughStockForBusinessOrder() {
+    const currentStock = selectedColor ? selectedColor.stock : product?.stock || 0;
+    const minQty = getMinQuantity();
+    return currentStock >= minQty;
+  }
+
   function handleColorChange(color) {
     setSelectedColor(color);
     setAvailableStock(color?.stock || 0);
-    setQty(1); // Reset quantity when color changes
+    
+    // BUSINESS QUANTITY - Reset to minimum quantity when color changes
+    setQty(getInitialQuantity());
     
     // Notify parent component about color change
     if (onColorChange) {
@@ -144,15 +163,66 @@ function DetailOne(props) {
     }
   }
 
-  function onChangeQty(current) {
-    setQty(current);
+  // BUILT-IN QUANTITY CONTROLS - No external Qty component needed
+  function incrementQty() {
+    const maxQty = availableStock;
+    if (qty < maxQty) {
+      setQty(qty + 1);
+    } else {
+      toast.warning(`Maximum available quantity is ${maxQty} units`);
+    }
+  }
+
+  function decrementQty() {
+    const minQty = getMinQuantity();
+    if (qty > minQty) {
+      setQty(qty - 1);
+    } else {
+      toast.warning(`Minimum quantity is ${minQty} units`);
+    }
+  }
+
+  function handleQtyInputChange(e) {
+    const newValue = parseInt(e.target.value) || getMinQuantity();
+    const minQty = getMinQuantity();
+    const maxQty = availableStock;
+
+    if (newValue < minQty) {
+      setQty(minQty);
+      toast.warning(`Minimum quantity is ${minQty} units`);
+    } else if (newValue > maxQty) {
+      setQty(maxQty);
+      toast.warning(`Maximum available quantity is ${maxQty} units`);
+    } else {
+      setQty(newValue);
+    }
   }
 
   function onCartClick() {
     const currentStock = selectedColor ? selectedColor.stock : product?.stock;
+    const minQty = getMinQuantity();
     
-    if (!currentStock || qty > currentStock) {
-      toast.error("Insufficient stock");
+    // BUSINESS QUANTITY - Enhanced stock validation
+    if (!currentStock || currentStock < 1) {
+      toast.error("Product is out of stock");
+      return;
+    }
+
+    // Check minimum quantity requirement for business users
+    if (isBusinessUser && qty < minQty) {
+      toast.error(`Business orders require minimum ${minQty} units`);
+      return;
+    }
+
+    // Check if requested quantity exceeds stock
+    if (qty > currentStock) {
+      toast.error(`Only ${currentStock} units available in stock`);
+      return;
+    }
+
+    // Check if business user has enough stock for minimum order
+    if (isBusinessUser && !hasEnoughStockForBusinessOrder()) {
+      toast.error(`Insufficient stock for business order (minimum ${minQty} units required)`);
       return;
     }
 
@@ -198,7 +268,9 @@ function DetailOne(props) {
       cartImage: productToAdd.cartImage,
       displayName: productToAdd.displayName,
       displayPrice: productToAdd.displayPrice,
-      isBusinessUser: productToAdd.isBusinessUser
+      isBusinessUser: productToAdd.isBusinessUser,
+      quantity: qty,
+      minQuantity: minQty
     });
 
     for (let i = 0; i < qty; i++) {
@@ -206,7 +278,8 @@ function DetailOne(props) {
     }
     
     const colorText = selectedColor ? ` (${selectedColor.colorName})` : '';
-    toast.success(`Product${colorText} added to cart`);
+    const userTypeText = isBusinessUser ? ' (Business Order)' : '';
+    toast.success(`${qty} unit(s)${colorText} added to cart${userTypeText}`);
   }
 
   // Enhanced Facebook sharing for better desktop pre-filling and mobile app opening
@@ -388,6 +461,9 @@ function DetailOne(props) {
       {isBusinessUser && (
         <div className="business-user-indicator">
           <span className="business-badge">Business Pricing Applied</span>
+          <div className="business-info">
+            <small>Minimum order quantity: {getMinQuantity()} units</small>
+          </div>
         </div>
       )}
 
@@ -399,9 +475,15 @@ function DetailOne(props) {
             {product.podColors.map((color, index) => (
               <div 
                 key={index}
-                className={`color-option ${selectedColor?.colorName === color.colorName ? 'selected' : ''} ${!color.isAvailable || color.stock <= 0 ? 'out-of-stock' : ''}`}
+                className={`color-option ${selectedColor?.colorName === color.colorName ? 'selected' : ''} ${
+                  !color.isAvailable || color.stock <= 0 ? 'out-of-stock' : ''
+                } ${
+                  isBusinessUser && color.stock < getMinQuantity() ? 'insufficient-business-stock' : ''
+                }`}
                 onClick={() => color.isAvailable && color.stock > 0 && handleColorChange(color)}
-                title={`${color.colorName} - Stock: ${color.stock}`}
+                title={`${color.colorName} - Stock: ${color.stock}${
+                  isBusinessUser && color.stock < getMinQuantity() ? ` (Insufficient for business order - min ${getMinQuantity()})` : ''
+                }`}
               >
                 <div 
                   className="color-circle"
@@ -409,12 +491,20 @@ function DetailOne(props) {
                 ></div>
                 <span className="color-name">{color.colorName}</span>
                 {color.stock <= 0 && <span className="stock-status">(Out of Stock)</span>}
+                {isBusinessUser && color.stock > 0 && color.stock < getMinQuantity() && (
+                  <span className="stock-status">(Insufficient Stock)</span>
+                )}
               </div>
             ))}
           </div>
           {selectedColor && (
             <div className="selected-color-info">
-              <p>Selected: <strong>{selectedColor.colorName}</strong> - Stock: <strong>{selectedColor.stock}</strong></p>
+              <p>
+                Selected: <strong>{selectedColor.colorName}</strong> - Stock: <strong>{selectedColor.stock}</strong>
+                {isBusinessUser && selectedColor.stock < getMinQuantity() && (
+                  <span className="insufficient-warning"> ⚠️ Insufficient for business order</span>
+                )}
+              </p>
             </div>
           )}
         </div>
@@ -447,15 +537,61 @@ function DetailOne(props) {
         <p>{product?.short_desc}</p>
       </div>
 
+      {/* BUSINESS QUANTITY - Show stock warning for business users */}
+      {isBusinessUser && !hasEnoughStockForBusinessOrder() && (
+        <div className="business-stock-warning">
+          <small className="warning-text">
+            ⚠️ Insufficient stock for business minimum order ({getMinQuantity()} units required)
+          </small>
+        </div>
+      )}
+
+      {/* BUILT-IN QUANTITY CONTROLS */}
       <div className="details-filter-row details-row-size">
-        <label htmlFor="qty">Qty:</label>
-        <Qty changeQty={onChangeQty} max={availableStock} value={qty}></Qty>
+        <label htmlFor="qty">
+          Qty{isBusinessUser && ` (Min: ${getMinQuantity()})`}:
+        </label>
+        <div className="product-details-quantity">
+          <input
+            className="vertical-quantity"
+            type="number"
+            value={qty}
+            onChange={handleQtyInputChange}
+            min={getMinQuantity()}
+            max={availableStock}
+          />
+          <button 
+            className="btn btn-increment btn-spinner" 
+            type="button"
+            onClick={incrementQty}
+            disabled={qty >= availableStock}
+          >
+            <i className="icon-plus"></i>
+          </button>
+          <button 
+            className="btn btn-decrement btn-spinner" 
+            type="button"
+            onClick={decrementQty}
+            disabled={qty <= getMinQuantity()}
+          >
+            <i className="icon-minus"></i>
+          </button>
+          
+          {/* Show min/max info for business users */}
+          {getMinQuantity() > 1 && (
+            <div className="qty-info">
+              <small>Min: {getMinQuantity()} | Max: {availableStock}</small>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="product-details-action">
         <button
           className={`btn-product btn-cart ${
-            availableStock < 1 || (product?.productType === 'pod' && !selectedColor) ? "btn-disabled" : ""
+            availableStock < 1 || 
+            (product?.productType === 'pod' && !selectedColor) ||
+            (isBusinessUser && !hasEnoughStockForBusinessOrder()) ? "btn-disabled" : ""
           }`}
           onClick={onCartClick}
         >
@@ -533,10 +669,32 @@ function DetailOne(props) {
           letter-spacing: 0.5px;
         }
         
+        .business-info {
+          margin-top: 5px;
+        }
+        
+        .business-info small {
+          color: #667eea;
+          font-weight: 500;
+        }
+        
         .business-price-note {
           color: #667eea;
           font-weight: 500;
           margin-left: 5px;
+        }
+        
+        .business-stock-warning {
+          margin: 10px 0;
+          padding: 8px 12px;
+          background-color: #fff3cd;
+          border: 1px solid #ffeaa7;
+          border-radius: 5px;
+        }
+        
+        .warning-text {
+          color: #856404;
+          font-weight: 500;
         }
         
         .color-selection-container {
@@ -573,7 +731,7 @@ function DetailOne(props) {
           text-align: center;
         }
         
-        .color-option:hover:not(.out-of-stock) {
+        .color-option:hover:not(.out-of-stock):not(.insufficient-business-stock) {
           border-color: #0088cc;
           background-color: #f0f8ff;
         }
@@ -583,9 +741,15 @@ function DetailOne(props) {
           background-color: #e6f3ff;
         }
         
-        .color-option.out-of-stock {
+        .color-option.out-of-stock,
+        .color-option.insufficient-business-stock {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+        
+        .color-option.insufficient-business-stock {
+          border-color: #ffa500;
+          background-color: #fff8e1;
         }
         
         .color-circle {
@@ -623,6 +787,75 @@ function DetailOne(props) {
           color: #0088cc;
         }
         
+        .insufficient-warning {
+          color: #e74c3c;
+          font-weight: 600;
+        }
+        
+        /* BUILT-IN QUANTITY CONTROLS STYLING */
+        .product-details-quantity {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          margin-top: 5px;
+        }
+        
+        .vertical-quantity {
+          width: 60px;
+          height: 40px;
+          text-align: center;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-size: 14px;
+          font-weight: 600;
+        }
+        
+        .btn-spinner {
+          width: 35px;
+          height: 35px;
+          border: 1px solid #ddd;
+          background: #f8f9fa;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        
+        .btn-spinner:hover:not(:disabled) {
+          background: #e9ecef;
+          border-color: #adb5bd;
+        }
+        
+        .btn-spinner:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          background: #f8f9fa;
+        }
+        
+        .btn-spinner i {
+          font-size: 12px;
+          color: #495057;
+        }
+        
+        .qty-info {
+          margin-top: 5px;
+          color: #666;
+          font-size: 11px;
+        }
+        
+        /* Remove number input arrows */
+        .vertical-quantity::-webkit-outer-spin-button,
+        .vertical-quantity::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        
+        .vertical-quantity[type=number] {
+          -moz-appearance: textfield;
+        }
+        
         @media (max-width: 768px) {
           .color-options {
             gap: 8px;
@@ -640,6 +873,16 @@ function DetailOne(props) {
           
           .color-name {
             font-size: 11px;
+          }
+          
+          .vertical-quantity {
+            width: 50px;
+            height: 35px;
+          }
+          
+          .btn-spinner {
+            width: 30px;
+            height: 30px;
           }
         }
       `}</style>

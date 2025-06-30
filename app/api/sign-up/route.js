@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs"
 import { sanityAdminClient } from "@/sanity/lib/client"
 import { AFFILIATE_DISCOUNT, FIRST_ORDER_DISCOUNT, REFER_FRIEND_DISCOUNT_BUS, REFER_FRIEND_DISCOUNT_IND } from "@/utils/discountValue.js"
 
-// 📧 WELCOME EMAIL FUNCTION
+// 📧 WELCOME EMAIL FUNCTION - EXISTING CODE UNCHANGED
 const sendWelcomeEmail = async (userData) => {
     try {
         console.log('📧 Sending welcome email to:', userData.email);
@@ -78,6 +78,103 @@ const sendWelcomeEmail = async (userData) => {
         
     } catch (error) {
         console.error('❌ Failed to send welcome email:', error);
+        // Don't throw error - continue with registration even if email fails
+        return { error: error.message };
+    }
+};
+
+// 📧 NEW: FIRST ORDER DISCOUNT EMAIL FUNCTION - TEMPLATE ID 10
+const sendFirstOrderDiscountEmail = async (userData) => {
+    try {
+        console.log('📧 === FIRST ORDER DISCOUNT EMAIL DEBUG START ===');
+        console.log('📧 Sending first order discount email to:', userData.email);
+        console.log('📧 User data:', JSON.stringify(userData, null, 2));
+        
+        if (!process.env.BREVO_API_KEY) {
+            throw new Error('BREVO_API_KEY environment variable is not set');
+        }
+        
+        // Extract first name from full name or email
+        const firstName = userData.name 
+            ? userData.name.split(' ')[0] 
+            : userData.email.split('@')[0];
+        
+        console.log('📧 Extracted first name:', firstName);
+        
+        // Use Template ID 10 for first order discount
+        const templateId = 10;
+        
+        // Prepare email parameters for template ID 10
+        const emailParams = {
+            FIRSTNAME: firstName,
+            NAME: userData.name || firstName,
+            EMAIL: userData.email,
+            DISCOUNT_PERCENTAGE: "15",
+            DISCOUNT_MESSAGE: "Selamat! Anda mendapat diskon 15% untuk pembelian pertama Anda!",
+            ACCOUNT_TYPE: userData.accountType === 'user' ? 'Individual' : 'Business',
+            SHOP_URL: `${process.env.NEXT_PUBLIC_BASE_URL}/ejuice` || 'https://mrkt.id/ejuice',
+            HOME_URL: process.env.NEXT_PUBLIC_BASE_URL || 'https://mrkt.id',
+            CHECKOUT_URL: `${process.env.NEXT_PUBLIC_BASE_URL}/checkout` || 'https://mrkt.id/checkout'
+        };
+        
+        // Add conditional message based on account type
+        if (userData.accountType === 'business') {
+            emailParams.SPECIAL_MESSAGE = userData.approved
+                ? "Sebagai anggota bisnis yang telah disetujui, Anda juga memiliki akses ke harga grosir!"
+                : "Setelah akun bisnis Anda disetujui, Anda akan memiliki akses ke harga grosir!";
+        } else {
+            emailParams.SPECIAL_MESSAGE = "Gunakan diskon ini untuk merasakan kualitas premium produk mrkt.";
+        }
+        
+        const requestBody = {
+            to: [
+                {
+                    email: userData.email,
+                    name: firstName
+                }
+            ],
+            templateId: templateId,
+            params: emailParams
+        };
+        
+        console.log('📧 Using template ID:', templateId);
+        console.log('📧 === FINAL EMAIL PARAMS ===');
+        console.log(JSON.stringify(emailParams, null, 2));
+        console.log('📧 === REQUEST BODY TO BREVO ===');
+        console.log(JSON.stringify(requestBody, null, 2));
+        
+        const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': process.env.BREVO_API_KEY,
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        console.log('📧 Brevo response status:', brevoResponse.status);
+        console.log('📧 Brevo response headers:', Object.fromEntries(brevoResponse.headers.entries()));
+        
+        if (!brevoResponse.ok) {
+            const errorText = await brevoResponse.text();
+            console.error('❌ Brevo API Error Response:', errorText);
+            throw new Error(`Brevo API Error: ${brevoResponse.status} - ${errorText}`);
+        }
+        
+        const result = await brevoResponse.json();
+        console.log('✅ First order discount email sent successfully:', result);
+        console.log('📧 === FIRST ORDER DISCOUNT EMAIL DEBUG END ===');
+        
+        return {
+            success: true,
+            messageId: result.messageId,
+            templateId: templateId
+        };
+        
+    } catch (error) {
+        console.error('❌ Failed to send first order discount email:', error);
+        console.error('❌ Error stack:', error.stack);
         // Don't throw error - continue with registration even if email fails
         return { error: error.message };
     }
@@ -254,7 +351,7 @@ export async function POST(request) {
             }
         }
 
-        // 🎯 SEND WELCOME EMAIL AFTER SUCCESSFUL REGISTRATION
+        // 🎯 SEND WELCOME EMAIL AFTER SUCCESSFUL REGISTRATION (EXISTING)
         console.log('📧 Attempting to send welcome email...');
         const emailResult = await sendWelcomeEmail({
             email: registeredUser.email,
@@ -263,25 +360,39 @@ export async function POST(request) {
             approved: registeredUser.approved
         });
 
-        // Update user record with email status
+        // 🎯 NEW: SEND FIRST ORDER DISCOUNT EMAIL (TEMPLATE ID 10)
+        console.log('📧 Attempting to send first order discount email...');
+        const discountEmailResult = await sendFirstOrderDiscountEmail({
+            email: registeredUser.email,
+            name: registeredUser.name || registeredUser.businessName || '',
+            accountType: registeredUser.accountType,
+            approved: registeredUser.approved
+        });
+
+        // Update user record with both email statuses
         try {
             await sanityAdminClient.patch(registeredUser._id).set({
                 welcomeEmailSent: !emailResult.error,
                 welcomeEmailSentAt: new Date().toISOString(),
-                welcomeEmailError: emailResult.error || null
+                welcomeEmailError: emailResult.error || null,
+                firstOrderDiscountEmailSent: !discountEmailResult.error,
+                firstOrderDiscountEmailSentAt: new Date().toISOString(),
+                firstOrderDiscountEmailError: discountEmailResult.error || null,
+                firstOrderDiscountTemplateId: 10
             }).commit();
         } catch (updateError) {
             console.error('❌ Error updating email status:', updateError);
         }
 
         const successMessage = accountType === 'user' 
-            ? `Individual account registered successfully! Welcome email sent to ${email}.`
-            : `Business account registered successfully! ${registeredUser.approved ? 'You have been approved and can access wholesale prices.' : 'Your application is under review.'} Welcome email sent to ${email}.`;
+            ? `Individual account registered successfully! Welcome email and first order discount email sent to ${email}.`
+            : `Business account registered successfully! ${registeredUser.approved ? 'You have been approved and can access wholesale prices.' : 'Your application is under review.'} Welcome email and first order discount email sent to ${email}.`;
 
         return Response.json({
             status: "success",
             message: successMessage,
             emailSent: !emailResult.error,
+            discountEmailSent: !discountEmailResult.error,
             user: {
                 id: registeredUser._id,
                 email: registeredUser.email,

@@ -4,36 +4,12 @@ import { sanityAdminClient } from "@/sanity/lib/client";
 import { calculateCartTotal } from "@/utils/discountValue";
 import { sendOrderConfirmationEmail } from "@/utils/brevoEmail"; // Import email function
 import { Xendit } from "xendit-node";
-import urlFor from "@/sanity/lib/image";
 
 // Initialize Xendit with proper configuration
 const xendit = new Xendit({
   secretKey: process.env.XENDIT_SECRET_KEY,
   serverUrl: "https://api.xendit.co"
 });
-
-// Helper function to get the correct image URL as a string
-const getProductImageUrl = (item) => {
-  try {
-    // Priority: cartImage > selectedColor first image > regular pictures
-    if (item.cartImage) {
-      // If cartImage is already a string URL, return it
-      if (typeof item.cartImage === 'string' && item.cartImage.startsWith('http')) {
-        return item.cartImage;
-      }
-      // If it's a Sanity image object, convert it
-      return urlFor(item.cartImage).url();
-    } else if (item.selectedColor?.pictures && item.selectedColor.pictures[0]) {
-      return urlFor(item.selectedColor.pictures[0]).url();
-    } else if (item.pictures && item.pictures.length > 0) {
-      return urlFor(item.pictures[0]).url();
-    }
-    return '/placeholder-image.jpg'; // Fallback
-  } catch (error) {
-    console.error("Error processing image URL for item:", item.name, error);
-    return '/placeholder-image.jpg'; // Fallback on error
-  }
-};
 
 export async function POST(request) {
   try {
@@ -252,9 +228,10 @@ export async function POST(request) {
     // Generate order ID
     const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     
-    // Transform cart items to match new schema structure with SKUs
-    const transformedProducts = enrichedItems.map(item => {
+    // 🎯 FIXED: Transform cart items with _key for Sanity
+    const transformedProducts = enrichedItems.map((item, index) => {
       const productData = {
+        _key: `product-${Date.now()}-${index}`, // 🎯 CRITICAL FIX: Add unique _key for Sanity
         name: item.name,
         slug: item.slug?.current || item.slug || '',
         cartId: item.cartId,
@@ -265,20 +242,19 @@ export async function POST(request) {
         
         // Include shipping SKUs for warehouse fulfillment
         shippingSku: item.shippingSku,
-        colorShippingSku: item.colorShippingSku,
-        
-        selectedColor: item.selectedColor ? {
-          colorName: item.selectedColor.colorName,
-          colorCode: item.selectedColor.colorCode
-        } : undefined, // Only include if exists
       };
       
-      // Remove undefined fields to prevent schema issues
-      if (productData.selectedColor === undefined) {
-        delete productData.selectedColor;
+      // 🎯 Only add colorShippingSku if it exists (not all products have color variants)
+      if (item.colorShippingSku) {
+        productData.colorShippingSku = item.colorShippingSku;
       }
-      if (productData.colorShippingSku === null || productData.colorShippingSku === undefined) {
-        delete productData.colorShippingSku;
+      
+      // 🎯 Only add selectedColor if it exists (not all products have colors)
+      if (item.selectedColor && item.selectedColor.colorName) {
+        productData.selectedColor = {
+          colorName: item.selectedColor.colorName,
+          colorCode: item.selectedColor.colorCode
+        };
       }
       
       return productData;
@@ -382,7 +358,7 @@ export async function POST(request) {
     try {
       console.log("📧 Sending order confirmation email immediately...");
       
-      // 🎯 ENHANCED: Prepare complete order data for email with product images
+      // 🎯 FIXED: Prepare complete order data for email (NO IMAGE URLs)
       const emailOrderData = {
         ...orderResult,
         // Add computed fields for email template
@@ -390,18 +366,19 @@ export async function POST(request) {
         xenditPaymentData: {
           paymentMethod: 'Xendit Payment Gateway'
         },
-        // 🖼️ ADD PRODUCT IMAGES AND ENHANCED PRODUCT DATA FOR EMAIL
-        products: enrichedItems.map(item => {
+        // 🎯 SIMPLIFIED: Products without image URLs
+        products: enrichedItems.map((item, index) => {
           const productName = item.name + (item.selectedColor?.colorName ? ` - ${item.selectedColor.colorName}` : '');
+          // 🎯 Use the most specific SKU available (color SKU if exists, otherwise main SKU)
           const finalSKU = item.colorShippingSku || item.shippingSku || 'N/A';
           
           return {
             name: productName,
             category: item.productType || 'Product',
-            skuNo: finalSKU,  // Use the most specific SKU available
+            skuNo: finalSKU,
             quantity: item.qty || 1,
             price: `Rp.${Math.round(item.sum || 0).toLocaleString('id-ID')}`,
-            imageUrl: getProductImageUrl(item) // 🎯 FIXED: Add actual product image
+            // 🎯 REMOVED: imageUrl since you don't need it
           };
         })
       };
@@ -415,7 +392,7 @@ export async function POST(request) {
         discountAmount: cartCalculation?.discount || 0,
         savedDiscountAmount: orderResult.discount?.amount,
         shippingCost: shippingCost,
-        productsWithImages: emailOrderData.products.map(p => ({ name: p.name, imageUrl: p.imageUrl, sku: p.skuNo }))
+        productsWithSKUs: emailOrderData.products.map(p => ({ name: p.name, sku: p.skuNo }))
       });
       
       // Send the email
@@ -591,7 +568,7 @@ export async function POST(request) {
           hasDiscount: cartCalculation?.discount > 0,
           discountAmount: orderResult.discount?.amount,
           finalTotal: validatedFinalTotal,
-          productImagesIncluded: true
+          productImagesIncluded: false
         }
       });
 

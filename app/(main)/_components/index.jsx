@@ -22,6 +22,19 @@ import Link from "next/link";
 import Image from "next/image";
 import urlFor from "@/sanity/lib/image";
 
+// Simple helper function to safely get image URL
+const getSafeImageUrl = (imageSource, fallback = "/images/icon.png") => {
+  if (!imageSource) return fallback;
+  
+  try {
+    const url = urlFor(imageSource)?.url();
+    return url || fallback;
+  } catch (error) {
+    console.warn('Error generating image URL:', error);
+    return fallback;
+  }
+};
+
 function HomePageComponent({
   homePageData,
   products,
@@ -42,14 +55,12 @@ function HomePageComponent({
             adClass="intro-slider owl-nav-inside"
             options={{ nav: false, dots: true }}
           >
-            {homePageData?.hero?.map((banner) => (
+            {homePageData?.hero?.map((banner, index) => (
               <div
-                key={banner?.tagline}
+                key={`hero-${index}-${banner?.tagline || ''}`}
                 className="intro-slide slide-image"
                 style={{
-                  background: `url(${urlFor(
-                    banner?.photo
-                  )?.url()}) no-repeat center center / cover`,
+                  background: `url(${getSafeImageUrl(banner?.photo, '/images/banner-placeholder.jpg')}) no-repeat center center / cover`,
                   backgroundColor: "#f0f2fa",
                 }}
               >
@@ -60,7 +71,7 @@ function HomePageComponent({
                     duration={1000}
                   >
                     <h5 className="banner-subtitle font-weight-normal text-primary">
-                      {banner?.tagline}
+                      {banner?.tagline || "Welcome"}
                     </h5>
                   </Reveal>
 
@@ -70,7 +81,7 @@ function HomePageComponent({
                     duration={1000}
                   >
                     <h3 className="banner-title font-weight-lighter text-primary w-full lg:max-w-[800px]">
-                      {banner?.heading}
+                      {banner?.heading || "Featured Products"}
                     </h3>
                   </Reveal>
 
@@ -80,7 +91,7 @@ function HomePageComponent({
                     duration={1000}
                   >
                     <p className="banner-desc font-weight-normal text-primary mb-3">
-                      {banner?.subText}
+                      {banner?.subText || "Discover our amazing collection"}
                     </p>
                   </Reveal>
 
@@ -90,7 +101,7 @@ function HomePageComponent({
                     duration={1000}
                   >
                     <Link href="/ejuice" className="btn btn-outline-secondary">
-                    BELANJA SEKARANG<i className="icon-angle-right"></i>
+                      BELANJA SEKARANG<i className="icon-angle-right"></i>
                     </Link>
                   </Reveal>
                 </div>
@@ -103,30 +114,38 @@ function HomePageComponent({
       </section>
 
       <Reveal keyframes={fadeIn} delay={200} duration={1000} triggerOnce>
-        {homePageData?.benefits?.length ? <section className="brand-section">
-          <div className="container">
-            <div className="heading heading-center">
-              <h2 className="title font-weigowht-normal text-secondary-dark mb-3">
-                Checkout Benefits
-              </h2>
-            </div>
+        {homePageData?.benefits?.length ? (
+          <section className="brand-section">
+            <div className="container">
+              <div className="heading heading-center">
+                <h2 className="title font-weigowht-normal text-secondary-dark mb-3">
+                  Checkout Benefits
+                </h2>
+              </div>
 
-            <OwlCarousel adClass="owl-brand" options={{ ...brandSlider, autoplay: true, loop: true }}>
-              {homePageData?.benefits?.map((benefit, index) => (
-                <a
-                  href="#"
-                  className="brand"
-                  key={index}
-                  onClick={(e) => {
-                    e.preventDefault();
-                  }}
-                >
-                  <img src={urlFor(benefit?.logo)?.url()} alt="Brand Name" />
-                </a>
-              ))}
-            </OwlCarousel>
-          </div>
-        </section> : null}
+              <OwlCarousel adClass="owl-brand" options={{ ...brandSlider, autoplay: true, loop: true }}>
+                {homePageData?.benefits?.map((benefit, index) => (
+                  <a
+                    href="#"
+                    className="brand"
+                    key={`benefit-${index}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                    }}
+                  >
+                    <img 
+                      src={getSafeImageUrl(benefit?.logo, '/images/icon.png')} 
+                      alt="Brand Name"
+                      onError={(e) => {
+                        e.target.src = '/images/icon.png';
+                      }}
+                    />
+                  </a>
+                ))}
+              </OwlCarousel>
+            </div>
+          </section>
+        ) : null}
       </Reveal>
 
       <Reveal keyframes={fadeIn} delay={200} duration={1000} triggerOnce>
@@ -146,20 +165,23 @@ function HomePageComponent({
                 <div className="banner banner-1">
                   <figure className="mb-0 lazy-media">
                     <div className="lazy-overlay"></div>
-                    {homePageData?.benefitImage1 ? <Image
+                    <Image
                       alt="banner"
-                      src={urlFor(homePageData?.benefitImage1)?.url()}
+                      src={getSafeImageUrl(homePageData?.benefitImage1, '/images/banner-default.jpg')}
                       width="700"
                       height="680"
-                    /> : null}
+                      onError={(e) => {
+                        e.target.src = '/images/banner-default.jpg';
+                      }}
+                    />
                   </figure>
 
                   <div className="banner-content content-top">
                     <h3 className="banner-title font-weight-normal text-white">
-                      {homePageData?.benefitText1}
+                      {homePageData?.benefitText1 || "Special Offer"}
                     </h3>
                     <p className="font-weight-normal text-white">
-                      {homePageData?.benefitSubText1}
+                      {homePageData?.benefitSubText1 || "Discover amazing deals"}
                     </p>
                   </div>
                   <div className="banner-content content-bottom">
@@ -167,7 +189,7 @@ function HomePageComponent({
                       href="https://www.tokopedia.com/agpremiumvapor"
                       className="btn btn-link btn-link-primary"
                     >
-                      Berbelanja sekarang<i className="icon-angle-right"></i>
+                      BELANJA SEKARANG<i className="icon-angle-right"></i>
                     </Link>
                   </div>
                 </div>
@@ -183,20 +205,23 @@ function HomePageComponent({
               >
                 <div className="banner banner-2 text-center">
                   <div className="banner-title font-weight-normal text-primary text-left">
-                    {homePageData?.benefitText2}
+                    {homePageData?.benefitText2 || "Premium Quality"}
                   </div>
                   <figure className="text-center lazy-media mb-0">
                     <div className="lazy-overlay"></div>
-                    {homePageData?.benefitImage2 ? <Image
+                    <Image
                       alt="banner"
-                      src={urlFor(homePageData?.benefitImage2)?.url()}
+                      src={getSafeImageUrl(homePageData?.benefitImage2, '/images/banner-default.jpg')}
                       width="570"
                       height="395"
-                    /> : null}
+                      onError={(e) => {
+                        e.target.src = '/images/banner-default.jpg';
+                      }}
+                    />
                   </figure>
 
                   <Link
-                    href="/ejuice"
+                    href="/devices"
                     className="btn btn-link d-inline-block btn-link-primary"
                   >
                     BELANJA SEKARANG<i className="icon-angle-right"></i>
@@ -230,6 +255,9 @@ function HomePageComponent({
                       src="/images/home/banner/2-1.jpg"
                       width="700"
                       height="680"
+                      onError={(e) => {
+                        e.target.src = '/images/banner-default.jpg';
+                      }}
                     />
                   </figure>
 
@@ -266,15 +294,18 @@ function HomePageComponent({
                       src="/images/home/banner/2-2.png"
                       width="700"
                       height="680"
+                      onError={(e) => {
+                        e.target.src = '/images/banner-default.jpg';
+                      }}
                     />
                   </figure>
 
                   {products?.length ? (
                     <>
-                      {products.slice(0,1 ).map((item, index) => (
+                      {products.slice(0, 1).map((item, index) => (
                         <div
                           className={`hotspot-wrapper hotspot-1`}
-                          key={"Dot:" + index}
+                          key={`hotspot-1-${item?.id || index}`}
                         >
                           <Link href="/produk/mangga-murni" className="hotspot">
                             <i className="icon-plus"></i>
@@ -287,7 +318,7 @@ function HomePageComponent({
                       {products?.slice(9, 10).map((item, index) => (
                         <div
                           className={`hotspot-wrapper hotspot-2`}
-                          key={"Dot:" + index}
+                          key={`hotspot-2-${item?.id || index}`}
                         >
                           <Link href="/produk/perpaduan-buah-beri" className="hotspot">
                             <i className="icon-plus"></i>
@@ -300,7 +331,7 @@ function HomePageComponent({
                       {products?.slice(5, 6).map((item, index) => (
                         <div
                           className={`hotspot-wrapper hotspot-3`}
-                          key={"Dot:" + index}
+                          key={`hotspot-3-${item?.id || index}`}
                         >
                           <Link href="/produk/kue-keju-stroberi" className="hotspot">
                             <i className="icon-plus"></i>
@@ -313,7 +344,7 @@ function HomePageComponent({
                       {products?.slice(4, 5).map((item, index) => (
                         <div
                           className={`hotspot-wrapper hotspot-4`}
-                          key={"Dot:" + index}
+                          key={`hotspot-4-${item?.id || index}`}
                         >
                           <Link href="/produk/tembakau-klasik" className="hotspot">
                             <i className="icon-plus"></i>
@@ -339,7 +370,8 @@ function HomePageComponent({
           </div>
         </div>
       </section>
-      {/* Account Signup Section - Now below Sumber Daya */}
+      
+
       <Reveal keyframes={fadeIn} delay={200} duration={1000} triggerOnce>
         <section className="account-signup-section py-5">
           <div className="container">
@@ -402,45 +434,46 @@ function HomePageComponent({
       <section className="banner-section banner-3cols">
         <div className="container">
           <div className="row justify-content-center">
-            {homePageData?.blogs?.map((blog) => (
+            {homePageData?.blogs?.map((blog, index) => (
+              <div className="col-lg-4 col-sm-6" key={`blog-${blog?._id || index}`}>
+                <Reveal
+                  keyframes={blurIn}
+                  delay={200}
+                  duration={1000}
+                  triggerOnce
+                >
+                  <div className="banner">
+                    <figure className="lazy-media">
+                      <div className="lazy-overlay"></div>
+                      <Image
+                        alt="blog banner"
+                        src={getSafeImageUrl(blog?.mainImage, '/images/blog-default.jpg')}
+                        width="700"
+                        height="680"
+                        onError={(e) => {
+                          e.target.src = '/images/blog-default.jpg';
+                        }}
+                      />
+                    </figure>
 
-            <div className="col-lg-4 col-sm-6" key={blog?._id}>
-              <Reveal
-                keyframes={blurIn}
-                delay={200}
-                duration={1000}
-                triggerOnce
-              >
-                <div className="banner">
-                  <figure className="lazy-media">
-                    <div className="lazy-overlay"></div>
-                    {blog?.mainImage ? <Image
-                      alt="banner"
-                      src={urlFor(blog?.mainImage)?.url()}
-                      width="700"
-                      height="680"
-                    /> : null}
-                  </figure>
-
-                  <div className="banner-content">
-                    <h3 className="banner-title font-weight-normal !mix-blend-difference line-clamp-2">
-                      {blog?.title}
-                    </h3>
-                    <p className="font-weight-normal line-clamp-1">
-                      {blog?.summary}
-                    </p>
-                    <Link
-                      href={`/informasi-penting/${blog?.slug?.current}`}
-                      className="btn btn-link btn-link-primary"
-                    >
-                      BACA LAGA<i className="icon-angle-right"></i>
-                    </Link>
+                    <div className="banner-content">
+                      <h3 className="banner-title font-weight-normal !mix-blend-difference line-clamp-2">
+                        {blog?.title || "Blog Post"}
+                      </h3>
+                      <p className="font-weight-normal line-clamp-1">
+                        {blog?.summary || "Read more about this topic..."}
+                      </p>
+                      <Link
+                        href={`/informasi-penting/${blog?.slug?.current || '#'}`}
+                        className="btn btn-link btn-link-primary"
+                      >
+                        BACA LAGA<i className="icon-angle-right"></i>
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              </Reveal>
-            </div>
+                </Reveal>
+              </div>
             ))}
-
           </div>
         </div>
       </section>
@@ -450,27 +483,29 @@ function HomePageComponent({
           <h2 className="title text-center">Ulasan Pelanggan</h2>
           <OwlCarousel options={{ nav: false, dots: true }}>
             {homePageData?.reviews?.map((review, index) => (
-              <blockquote className="testimonial text-center">
+              <blockquote className="testimonial text-center" key={`review-${index}`}>
                 <div className="ratings-container justify-content-center">
                   <div className="ratings">
                     <div
                       className="ratings-val"
-                      style={{ width: review?.stars * 20 + "%" }}
+                      style={{ width: (review?.stars || 5) * 20 + "%" }}
                     ></div>
                     <span className="tooltip-text">
-                      {review?.stars?.toFixed(2)}
+                      {(review?.stars || 5).toFixed(2)}
                     </span>
                   </div>
                 </div>
                 <h5 className="subtitle font-weight-lighter text-primary">
-                  {review?.heading}
+                  {review?.heading || "Great Product"}
                 </h5>
-                <p className="font-weight-normal text-dark">&rsquo;{review?.text}&rsquo;</p>
+                <p className="font-weight-normal text-dark">
+                  &rsquo;{review?.text || "Excellent quality and service!"}&rsquo;
+                </p>
                 <cite className="font-weight-normal text-dark">
-                  - {review?.reviewerName}
+                  - {review?.reviewerName || "Anonymous Customer"}
                 </cite>
                 <p className="font-weight-normal text-dark">
-                  {review?.country}
+                  {review?.country || "Indonesia"}
                 </p>
               </blockquote>
             ))}
@@ -478,11 +513,7 @@ function HomePageComponent({
         </section>
       </Reveal>
 
-      
-      
-      
-
-{/*       <ReferFriendModal /> */}
+      {/* <ReferFriendModal /> */}
     </div>
   );
 }

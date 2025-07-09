@@ -188,7 +188,7 @@ function InfoThree({ product }) {
           </div>
         </Card>}
         {product?.shippingDetails && <Card
-          title="Shipping & Returns"
+          title="Pengiriman dan Pengembalian"
           adClass="card-box card-sm"
         >
           <div className="product-desc-content">
@@ -204,11 +204,11 @@ function InfoThree({ product }) {
               product.reviews.map((review, index) => (
                 <div className={`review ${index === product?.reviews?.length-1 ? 'border-0' : ''}`} key={`review-${index}`}>
                   <div className="row no-gutters">
-                    <div className="col-auto">
-                      <h4>
+                    <div className="col-auto" style={{ minWidth: '120px' }}>
+                      <h4 className="mb-1">
                         <Link href="#">{review?.name}</Link>
                       </h4>
-                      <div className="ratings-container">
+                      <div className="ratings-container mb-1">
                         <div className="ratings">
                           <div
                             className="ratings-val"
@@ -219,15 +219,55 @@ function InfoThree({ product }) {
                           </span>
                         </div>
                       </div>
-                      <span className="review-date mb-1">
+                      <span className="review-date mb-1 text-muted small">
                         {calculateDaysAgo(review?.createdAt)}
                       </span>
                     </div>
                     <div className="col">
-                      <h4>{review.title}</h4>
+                      <div className="d-flex justify-content-between align-items-start mb-2">
+                        <div className="d-flex align-items-center gap-2 flex-wrap">
+                          {/* Verified Purchase Badge */}
+                          
+                            <span 
+                              className="badge"
+                              style={{ 
+                                fontSize: '11px', 
+                                backgroundColor: '#dcfce7',
+                                color: '#166534',
+                                border: '1px solid #bbf7d0',
+                                fontWeight: '500',
+                                padding: '4px 8px'
+                              }}
+                            >
+                              Verified Purchase
+                            </span>
+                         
+                        </div>
+                        {/* Recommends Badge */}
+                        <div>
+
+                            <span 
+                              className="badge"
+                              style={{ 
+                                fontSize: '11px',
+                                backgroundColor: review.wouldRecommend ? '#dcfce7' : '#fecaca',
+                                color: review.wouldRecommend ? '#166534' : '#dc2626',
+                                border: review.wouldRecommend ? '1px solid #bbf7d0' : '1px solid #fca5a5',
+                                fontWeight: '500',
+                                padding: '4px 8px'
+                              }}
+                            >
+                              👍 Recommends
+                            </span>
+                        </div>
+                      </div>
+
+                      <h4 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: '600' }}>
+                        {review.title}
+                      </h4>
 
                       <div className="review-content">
-                        <p>{review.description}</p>
+                        <p className="mb-3">{review.description}</p>
                       </div>
                       
                       {/* Review Images Display */}

@@ -5,9 +5,15 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { sanityAdminClient } from "@/sanity/lib/client";
 
-export const authOptions = {
+const authOptions = {
   providers: [
     CredentialsProvider({
+      name: "credentials",
+      credentials: {
+        identifier: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+        type: { label: "Type", type: "text" }
+      },
       async authorize(credentials) {
         try {
           const existingUser = await sanityAdminClient.fetch(
@@ -36,12 +42,20 @@ export const authOptions = {
           // Check password
           const isPasswordCorrect = await bcrypt.compare(credentials.password, existingUser.password);
           if (isPasswordCorrect) {
-            return existingUser;
+            return {
+              id: existingUser._id,
+              email: existingUser.email,
+              name: existingUser.fullName || existingUser.businessName,
+              profileCompleted: existingUser.profileCompleted,
+              accountType: existingUser.accountType,
+              approved: existingUser.approved,
+              authType: 'credentials'
+            };
           } else {
             throw new Error("Password is incorrect");
           }
         } catch (err) {
-          console.log(err);
+          console.log("Credentials auth error:", err);
           throw new Error(err.message || "Failed to authenticate");
         }
       },
@@ -68,31 +82,26 @@ export const authOptions = {
         try {
           console.log("Google sign in attempt for:", user.email);
           
-          // Check if user already exists in the system
           const existingUser = await sanityAdminClient.fetch(
             `*[_type == 'user' && email == $email][0]`, 
             { email: user.email }
           );
 
           if (!existingUser) {
-            // User doesn't exist in our system - reject the sign in
             console.log("User not found in system, rejecting Google sign in");
             return false;
           }
 
-          // Check if it's a business account trying to use Google (not allowed)
           if (existingUser.accountType === 'business') {
             console.log("Business user tried to login with Google - not allowed");
             return false;
           }
 
-          // Check if business account is approved (shouldn't happen for Google but just in case)
           if (existingUser.accountType === 'business' && !existingUser.approved) {
             console.log("Business account not approved");
             return false;
           }
 
-          // User exists and is a personal account - allow sign in
           user.id = existingUser._id;
           user.profileCompleted = existingUser.profileCompleted;
           user.accountType = existingUser.accountType;
@@ -130,7 +139,6 @@ export const authOptions = {
         token.approved = user.approved;
         token.authType = user.authType;
         
-        // Add user-specific fields
         if (user.accountType === 'user') {
           token.name = user.name;
           token.whatsapp = user.whatsapp;
@@ -177,9 +185,25 @@ export const authOptions = {
     },
 
     async redirect({ url, baseUrl }) {
-      // For Google sign in, check if profile is complete
+      console.log("Redirect callback:", { url, baseUrl });
+      
+      // Handle signout
+      if (url.includes('/api/auth/signout') || url.includes('signout')) {
+        console.log("Signout detected, redirecting to home");
+        return baseUrl;
+      }
+      
+      // For Google sign in
       if (url.includes('/api/auth/callback/google')) {
         return `${baseUrl}/auth/complete-profile-check`;
+      }
+      
+      // Handle callback URLs
+      if (url.includes('callbackUrl=')) {
+        const callbackUrl = new URL(url).searchParams.get('callbackUrl');
+        if (callbackUrl && callbackUrl.startsWith('/')) {
+          return `${baseUrl}${callbackUrl}`;
+        }
       }
       
       // Default redirects
@@ -191,27 +215,50 @@ export const authOptions = {
   
   pages: {
     signIn: "/auth/masuk",
+    signOut: "/",
     error: '/auth/error',
   },
   
   session: {
     strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   
-  events: {
-    async signIn({ user, account, profile, isNewUser }) {
-      if (account.provider === 'google') {
-        console.log("Google sign in event:", { 
-          profileCompleted: user.profileCompleted,
-          isNewUser,
-          userId: user.id 
-        });
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production'
       }
     }
   },
   
-  secret: process.env.NEXTAUTH_SECRET || "mQ46qpFwfE1BHuqMC+qlm19qBAD9fVPgh28werwe3ASFlAfnKjM=",
+  events: {
+    async signIn({ user, account, profile, isNewUser }) {
+      console.log("SignIn event:", { 
+        provider: account.provider,
+        userId: user.id,
+        email: user.email
+      });
+    },
+    
+    async signOut({ session, token }) {
+      console.log("SignOut event:", { 
+        userId: token?.id || session?.user?.id,
+        email: token?.email || session?.user?.email 
+      });
+    }
+  },
+  
+  secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === 'development',
 };
 
+// Create the NextAuth handler
 const handler = NextAuth(authOptions);
+
+// Export for App Router (Next.js 13+)
 export { handler as GET, handler as POST };

@@ -133,7 +133,7 @@ export const cartSlice = createSlice({
       // Enhanced toast message with color info and pricing context
       const colorText = selectedColor ? ` (${selectedColor.colorName})` : '';
       const priceText = isBusinessUser ? ' at business price' : '';
-      toast.success(`Product${colorText} added to cart${priceText}`);
+      // toast.success(`Product${colorText} added to cart${priceText}`);
     },
 
     removeFromCart: (state, action) => {

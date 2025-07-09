@@ -82,9 +82,9 @@ function CartPageComponent() {
     return item.price || 0;
   };
 
-  // Function to get user data
+  // Function to get user data (modified to handle non-authenticated users)
   const getUserData = async () => {
-    if (!session?.user?.email) return null;
+    if (!session?.user?.email) return { orderCount: 0, lifetimeSpend: 0 };
 
     try {
       const userData = await client.fetch(
@@ -102,14 +102,14 @@ function CartPageComponent() {
     }
   };
 
-  // FIXED: Use EXACT same discount calculation logic as checkout page
+  // UPDATED: Modified discount calculation to work with guest users
   const calculateCartTotals = async () => {
     if (!items || items.length === 0) return null;
 
     try {
-      // Get user data for first order discount calculation
+      // Get user data for first order discount calculation (only for logged-in users)
       const getUserDataForDiscount = async () => {
-        if (!session?.user?.email) return null;
+        if (!session?.user?.email) return { orderCount: 0, lifetimeSpend: 0 };
         try {
           const userData = await client.fetch(
             `*[_type == 'user' && email == $email][0]{
@@ -168,8 +168,9 @@ function CartPageComponent() {
           .reduce((total, item) => total + (item.sum || 0), 0);
       };
       
+      // Updated: Allow discounts for non-business users (including guests)
       const isEligibleForDiscounts = () => {
-        return !session || session?.user?.type !== 'business';
+        return !session?.user?.accountType || session?.user?.accountType !== 'business';
       };
 
       const bottleCount = countProductTypes(validItems, 'bottle');
@@ -178,7 +179,7 @@ function CartPageComponent() {
 
       let bestDiscount = { amount: 0, details: null };
 
-      // Check for first order discount (logged in users only)
+      // Check for first order discount (ONLY for logged in users with no previous orders)
       if (session?.user && userDataObj?.orderCount === 0) {
         const discountAmount = subtotal * 0.2; // 20% first order discount
         if (discountAmount > bestDiscount.amount) {
@@ -194,7 +195,7 @@ function CartPageComponent() {
         }
       }
 
-      // If not a business account, check for bundle discounts
+      // Bundle and volume discounts available for all non-business users (including guests)
       if (isEligibleForDiscounts()) {
         if (hasPodDevice && bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.5;
@@ -321,12 +322,12 @@ function CartPageComponent() {
       .reduce((count, item) => count + (item.qty || 1), 0);
   };
 
-  // Function to check if discounts are eligible
+  // Function to check if discounts are eligible (updated for guest users)
   const isEligibleForDiscounts = () => {
-    return !session || session?.user?.accountType !== 'business';
+    return !session?.user?.accountType || session?.user?.accountType !== 'business';
   };
 
-  // FIXED: Use the checkout page calculation
+  // Updated calculation effect
   useEffect(() => {
     if (!items?.length) {
       setCartCalculation(null);
@@ -358,6 +359,8 @@ function CartPageComponent() {
   useEffect(() => {
     if (session?.user) {
       getUserData().then(data => setUserData(data));
+    } else {
+      setUserData({ orderCount: 0, lifetimeSpend: 0 });
     }
   }, [session?.user]);
 
@@ -375,6 +378,7 @@ function CartPageComponent() {
     }
   }
 
+  // Updated discount handler to work with guests
   const handleDiscount = async () => {
     try {
       if (discount) {
@@ -403,26 +407,31 @@ function CartPageComponent() {
         return;
       }
 
-      const res = await client.fetch(`*[_type == 'discount' && code=='${code}' && (email == '${session?.user?.email}' || email == null)] {
+      // Modified query to work with or without user email
+      const userEmail = session?.user?.email || null;
+      const res = await client.fetch(`*[_type == 'discount' && code=='${code}' && (email == '${userEmail}' || email == null)] {
         ...
       }`);
 
       if (!res?.length) {
-        const referralCheck = await client.fetch(`*[_type == 'user' && referralCode=='${code}' && email != '${session?.user?.email}'][0]`);
-        
-        if (referralCheck) {
-          const referralDiscount = {
-            code: code,
-            name: "Diskon Referral",
-            percentage: 40,
-            type: "referral",
-            email: referralCheck.email
-          };
+        // Check referral code only if user is logged in
+        if (session?.user?.email) {
+          const referralCheck = await client.fetch(`*[_type == 'user' && referralCode=='${code}' && email != '${session.user.email}'][0]`);
           
-          dispatch(applyDiscount(referralDiscount));
-          toast.success("Diskon referral diterapkan!");
-          setCode("");
-          return;
+          if (referralCheck) {
+            const referralDiscount = {
+              code: code,
+              name: "Diskon Referral",
+              percentage: 40,
+              type: "referral",
+              email: referralCheck.email
+            };
+            
+            dispatch(applyDiscount(referralDiscount));
+            toast.success("Diskon referral diterapkan!");
+            setCode("");
+            return;
+          }
         }
         
         toast.error("Kode diskon tidak valid");
@@ -451,13 +460,9 @@ function CartPageComponent() {
     }, 400);
   }
 
+  // UPDATED: Remove mandatory login requirement
   const handleCheckout = (e) => {
     e.preventDefault();
-    
-    if (!session) {
-      router.push("/auth/masuk");
-      return;
-    }
     
     if (items?.length < 1) {
       toast.error("Tidak ada produk dalam keranjang");
@@ -465,10 +470,28 @@ function CartPageComponent() {
     }
 
     try {
-      router.push("/checkout");
+      // Show loading state
+      setLoading(true);
+      
+      // Add a small delay to ensure cart state is properly saved
+      setTimeout(() => {
+        router.push("/checkout");
+      }, 100);
+      
     } catch (error) {
       console.error("Router.push failed:", error);
-      window.location.href = "/checkout";
+      // Fallback: try direct navigation
+      try {
+        window.location.href = "/checkout";
+      } catch (fallbackError) {
+        console.error("Fallback navigation failed:", fallbackError);
+        toast.error("Gagal mengarahkan ke halaman checkout");
+      }
+    } finally {
+      // Reset loading state after a delay
+      setTimeout(() => {
+        setLoading(false);
+      }, 1000);
     }
   };
 
@@ -710,7 +733,6 @@ function CartPageComponent() {
                           </td>
                         </tr>
                         
-                        {/* FIXED: Shows discount exactly like checkout page */}
                         {cartCalculation?.discount > 0 && cartCalculation?.discountDetails && (
                           <tr className="summary-shipping">
                             <td className="py-0">
@@ -741,10 +763,11 @@ function CartPageComponent() {
                       </tbody>
                     </table>
 
+                    {/* Updated discount hint message */}
                     {isEligibleForDiscounts() && items.length > 0 && !cartCalculation?.discountDetails && (
                       <div className="alert alert-info pb-1 pt-1 mb-2 mt-2">
                         <small>
-                          {!session && "Daftar untuk mendapat diskon! "}
+                          {!session && "Masuk untuk mendapat diskon pesanan pertama 15%! "}
                           {session && userData?.orderCount === 0 && "Diskon pesanan pertama: 15% off! "}
                           {hasAryaPrimeDevice() && getBottleCount() >= 3 && "Arya Prime + 3 botol: 35% off botol! "}
                           {hasAryaPrimeDevice() && getBottleCount() >= 1 && getBottleCount() < 3 && "Arya Prime + botol: 15% off botol! "}
@@ -757,11 +780,20 @@ function CartPageComponent() {
                     <button
                       className="btn btn-outline-primary-2 btn-order btn-block"
                       type="button"
-                      disabled={items.length < 1}
+                      disabled={items.length < 1 || loading}
                       onClick={handleCheckout}
                     >
-                      LANJUT KE CHECKOUT
+                      {loading ? "Memuat..." : "LANJUT KE CHECKOUT"}
                     </button>
+
+                    {/* Login suggestion for guests */}
+                    {!session && (
+                      <div className="text-center mt-2">
+                        <small className="text-muted">
+                          Sudah punya akun? <Link href="/auth/masuk" className="text-primary">Masuk</Link> untuk diskon khusus!
+                        </small>
+                      </div>
+                    )}
                   </div>
 
                   <Link

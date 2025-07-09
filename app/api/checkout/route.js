@@ -1,9 +1,10 @@
-// app/api/checkout/route.js - COMPLETE FIXED VERSION
+// app/api/checkout/route.js - COMPLETE FIXED VERSION WITH GUEST SUPPORT
 import { NextResponse } from "next/server";
 import { sanityAdminClient } from "@/sanity/lib/client";
 import { calculateCartTotal } from "@/utils/discountValue";
-import { sendOrderConfirmationEmail } from "@/utils/brevoEmail"; // Import email function
+import { sendOrderConfirmationEmail } from "@/utils/brevoEmail";
 import { Xendit } from "xendit-node";
+import bcrypt from "bcryptjs";
 
 // Initialize Xendit with proper configuration
 const xendit = new Xendit({
@@ -14,13 +15,19 @@ const xendit = new Xendit({
 export async function POST(request) {
   try {
     const body = await request.json();
+    
+    // UPDATED: Extract new fields for guest checkout support
     const { 
       items, 
       shippingCost, 
       discount, 
       discountCalculation, 
       user,
-      shippingInfo
+      shippingInfo,
+      isGuest,
+      userEmail,
+      createAccount,
+      accountData
     } = body;
     
     // Debug logging
@@ -28,13 +35,30 @@ export async function POST(request) {
       itemCount: items?.length,
       shippingCost,
       discountApplied: !!discount,
-      userEmail: user?.email,
-      shippingInfo: shippingInfo
+      isGuest,
+      userEmail,
+      createAccount,
+      hasShippingInfo: !!shippingInfo
     });
     
-    if (!items || !user || !shippingInfo) {
+    // UPDATED: Validation for guest checkout
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
-        { success: false, message: "Invalid request data" },
+        { success: false, message: "No items in cart" },
+        { status: 400 }
+      );
+    }
+
+    if (!shippingInfo) {
+      return NextResponse.json(
+        { success: false, message: "Shipping information is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!userEmail) {
+      return NextResponse.json(
+        { success: false, message: "Email is required" },
         { status: 400 }
       );
     }
@@ -57,6 +81,81 @@ export async function POST(request) {
         { success: false, message: "Payment configuration error" },
         { status: 500 }
       );
+    }
+
+    // UPDATED: Handle guest account creation
+    let finalUser = user;
+    let userData = null;
+
+    if (isGuest && createAccount && accountData) {
+      try {
+        console.log("Creating new user account for guest...");
+        
+        // Check if user already exists
+        const existingUser = await sanityAdminClient.fetch(
+          `*[_type == 'user' && email == $email][0]`,
+          { email: userEmail }
+        );
+
+        if (existingUser) {
+          console.log("User already exists, using existing account");
+          userData = existingUser;
+          finalUser = { email: existingUser.email, name: existingUser.fullName };
+        } else {
+          // Hash password
+          const hashedPassword = await bcrypt.hash(accountData.password, 12);
+          
+          // Create new user
+          const newUserData = {
+            _type: 'user',
+            fullName: accountData.fullName || shippingInfo.fullName,
+            email: userEmail,
+            password: hashedPassword,
+            phone: accountData.phone || shippingInfo.phone,
+            profileCompleted: true,
+            accountType: 'personal',
+            createdAt: new Date().toISOString()
+          };
+
+          userData = await sanityAdminClient.create(newUserData);
+          finalUser = { email: userData.email, name: userData.fullName };
+          console.log("New user account created:", userData._id);
+        }
+      } catch (error) {
+        console.error("Error creating user account:", error);
+        // Continue as guest if account creation fails
+        console.log("Continuing as guest checkout due to account creation error");
+      }
+    }
+
+    // UPDATED: Fetch user data (for both existing users and guests)
+    if (!userData && !isGuest && user?.email) {
+      userData = await sanityAdminClient.fetch(
+        `*[_type == 'user' && email == $email][0]{
+          ...,
+          "orderCount": count(*[_type == 'order' && email == $email]),
+        }`,
+        { email: user.email }
+      );
+    } else if (!userData && userEmail) {
+      // For guests or new accounts, check if they have any previous orders
+      userData = await sanityAdminClient.fetch(
+        `*[_type == 'user' && email == $email][0]{
+          ...,
+          "orderCount": count(*[_type == 'order' && email == $email]),
+        }`,
+        { email: userEmail }
+      );
+      
+      // If no user found, create a minimal userData object for guests
+      if (!userData) {
+        userData = {
+          orderCount: 0,
+          lifetimeSpend: 0,
+          email: userEmail,
+          isGuest: true
+        };
+      }
     }
     
     // ======= FETCH SKUs FROM SANITY =======
@@ -131,15 +230,6 @@ export async function POST(request) {
 
     console.log("🎯 SKU fetching complete!");
     
-    // Fetch user data from Sanity to get complete profile
-    const userData = await sanityAdminClient.fetch(
-      `*[_type == 'user' && email == $email][0]{
-        ...,
-        "orderCount": count(*[_type == 'order' && email == $email]),
-      }`,
-      { email: user.email }
-    );
-    
     // Use provided calculation if available, otherwise recalculate
     let cartCalculation = discountCalculation;
     if (!cartCalculation) {
@@ -183,12 +273,13 @@ export async function POST(request) {
       cartCalculationDiscount: cartCalculation.discount,
       cartCalculationDiscountDetails: cartCalculation.discountDetails,
       cartCalculationOriginal: cartCalculation.original,
-      cartCalculationTotal: cartCalculation.total
+      cartCalculationTotal: cartCalculation.total,
+      isGuest,
+      userEmail
     });
     
-    // If this is a first order with discount, or a referral was used,
-    // update the user's discount record
-    if (userData && ((userData.orderCount === 0 || discount?.type === 'referral') && discount)) {
+    // UPDATED: Handle discount updates for both users and guests
+    if (userData && userData._id && ((userData.orderCount === 0 || discount?.type === 'referral') && discount)) {
       try {
         const updatedDiscounts = (userData.discountsAvailable || []).filter(
           d => d.code !== discount.code
@@ -209,7 +300,7 @@ export async function POST(request) {
       try {
         const referral = await sanityAdminClient.fetch(
           `*[_type == 'referral' && referralCode == $code && referredEmail == $email][0]`,
-          { code: discount.code, email: user.email }
+          { code: discount.code, email: userEmail }
         );
         
         if (referral) {
@@ -228,10 +319,10 @@ export async function POST(request) {
     // Generate order ID
     const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     
-    // 🎯 FIXED: Transform cart items with _key for Sanity
+    // Transform cart items with _key for Sanity
     const transformedProducts = enrichedItems.map((item, index) => {
       const productData = {
-        _key: `product-${Date.now()}-${index}`, // 🎯 CRITICAL FIX: Add unique _key for Sanity
+        _key: `product-${Date.now()}-${index}`,
         name: item.name,
         slug: item.slug?.current || item.slug || '',
         cartId: item.cartId,
@@ -239,17 +330,13 @@ export async function POST(request) {
         quantity: item.qty,
         price: item.sale_price || item.price,
         totalPrice: item.sum,
-        
-        // Include shipping SKUs for warehouse fulfillment
         shippingSku: item.shippingSku,
       };
       
-      // 🎯 Only add colorShippingSku if it exists (not all products have color variants)
       if (item.colorShippingSku) {
         productData.colorShippingSku = item.colorShippingSku;
       }
       
-      // 🎯 Only add selectedColor if it exists (not all products have colors)
       if (item.selectedColor && item.selectedColor.colorName) {
         productData.selectedColor = {
           colorName: item.selectedColor.colorName,
@@ -280,25 +367,25 @@ export async function POST(request) {
       notes: shippingInfo.notes || ""
     };
     
-    // 🎯 FIXED: Create the order with proper discount object creation
+    // UPDATED: Create the order with proper user handling for guests
     const orderData = {
       _type: "order",
       orderId: orderId,
       userId: userData?._id || null,
-      email: user.email,
+      email: userEmail,
       name: shippingInfo.fullName,
       paid: false,
       contact: shippingInfo.phone,
       subTotal: cartCalculation.original,
       shippingPrice: shippingCost,
+      isGuest: isGuest || false,
       
-      // 🎯 CRITICAL FIX: Check cartCalculation.discount instead of original discount object
-      // This fixes automatic first-order discounts that don't have a manual discount code
+      // Discount handling
       discount: (cartCalculation.discount > 0) ? {
         name: cartCalculation.discountDetails?.name || discount?.name || 'Discount Applied',
         code: cartCalculation.discountDetails?.code || discount?.code || 'AUTO-DISCOUNT',
         percentage: cartCalculation.discountDetails?.percentage || discount?.percentage || 0,
-        amount: cartCalculation.discount, // This is the key field!
+        amount: cartCalculation.discount,
         email: discount?.email || null,
         type: cartCalculation.discountDetails?.type || discount?.type || 'automatic',
         message: cartCalculation.discountDetails?.message || discount?.message || ''
@@ -338,7 +425,9 @@ export async function POST(request) {
       cartCalculationDiscount: cartCalculation.discount,
       cartCalculationDiscountDetails: cartCalculation.discountDetails,
       finalDiscountObject: orderData.discount,
-      discountAmount: orderData.discount?.amount
+      discountAmount: orderData.discount?.amount,
+      isGuest: orderData.isGuest,
+      userEmail: orderData.email
     });
     
     console.log("Order data being saved:", {
@@ -346,6 +435,8 @@ export async function POST(request) {
       productCount: orderData.products.length,
       hasDiscount: !!orderData.discount,
       discountAmount: orderData.discount?.amount,
+      isGuest: orderData.isGuest,
+      userEmail: orderData.email,
       shippingInfo: orderData.shippingInfo,
       productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku }))
     });
@@ -354,22 +445,19 @@ export async function POST(request) {
     const orderResult = await sanityAdminClient.create(orderData);
     console.log("✅ Order saved successfully with SKUs:", orderResult._id);
     
-    // 🔥 SEND EMAIL IMMEDIATELY AFTER ORDER CREATION (NO WEBHOOK NEEDED)
+    // SEND EMAIL IMMEDIATELY AFTER ORDER CREATION
     try {
       console.log("📧 Sending order confirmation email immediately...");
       
-      // 🎯 FIXED: Prepare complete order data for email (NO IMAGE URLs)
+      // Prepare complete order data for email
       const emailOrderData = {
         ...orderResult,
-        // Add computed fields for email template
-        paidAt: new Date().toISOString(), // Use current time since order just created
+        paidAt: new Date().toISOString(),
         xenditPaymentData: {
           paymentMethod: 'Xendit Payment Gateway'
         },
-        // 🎯 SIMPLIFIED: Products without image URLs
         products: enrichedItems.map((item, index) => {
           const productName = item.name + (item.selectedColor?.colorName ? ` - ${item.selectedColor.colorName}` : '');
-          // 🎯 Use the most specific SKU available (color SKU if exists, otherwise main SKU)
           const finalSKU = item.colorShippingSku || item.shippingSku || 'N/A';
           
           return {
@@ -378,7 +466,6 @@ export async function POST(request) {
             skuNo: finalSKU,
             quantity: item.qty || 1,
             price: `Rp.${Math.round(item.sum || 0).toLocaleString('id-ID')}`,
-            // 🎯 REMOVED: imageUrl since you don't need it
           };
         })
       };
@@ -392,6 +479,7 @@ export async function POST(request) {
         discountAmount: cartCalculation?.discount || 0,
         savedDiscountAmount: orderResult.discount?.amount,
         shippingCost: shippingCost,
+        isGuest: orderResult.isGuest,
         productsWithSKUs: emailOrderData.products.map(p => ({ name: p.name, sku: p.skuNo }))
       });
       
@@ -429,29 +517,27 @@ export async function POST(request) {
         console.error("Failed to update email error status:", updateError);
       }
       
-      // Continue with checkout even if email fails
       console.log("⚠️ Continuing with checkout despite email failure");
     }
     
-    // 🔥 FIXED: Create Xendit Invoice with validation-safe format
+    // Create Xendit Invoice with validation-safe format
     try {
       console.log("Creating Xendit invoice for order:", orderResult._id);
       
       const { Invoice } = xendit;
       
-      // Build safe items array (NO negative prices - Xendit doesn't allow them)
+      // Build safe items array
       const invoiceItems = [];
       
       // Add all products
       transformedProducts.forEach(item => {
-        // Ensure all required fields are present and valid
         const itemName = item.name + (item.selectedColor ? ` - ${item.selectedColor.colorName}` : '');
         const itemQuantity = parseInt(item.quantity) || 1;
         const itemPrice = Math.round(parseFloat(item.price) || 0);
         
-        if (itemPrice > 0) { // Only add items with positive prices
+        if (itemPrice > 0) {
           invoiceItems.push({
-            name: itemName.substring(0, 255), // Xendit has character limits
+            name: itemName.substring(0, 255),
             quantity: itemQuantity,
             price: itemPrice,
             category: (item.productType || 'product').substring(0, 50)
@@ -469,7 +555,6 @@ export async function POST(request) {
         });
       }
       
-      // DON'T add discount as line item - handle in description instead
       let invoiceDescription = `Order #${orderId} - MRKT Vape`;
       if (cartCalculation?.discount > 0 && cartCalculation?.discountDetails) {
         invoiceDescription += ` (${cartCalculation.discountDetails.name} diterapkan)`;
@@ -485,14 +570,13 @@ export async function POST(request) {
         externalId: orderResult._id,
         amount: validatedFinalTotal,
         description: invoiceDescription.substring(0, 255),
-        payerEmail: user.email,
+        payerEmail: userEmail,
         customerName: shippingInfo.fullName.substring(0, 255),
         currency: "IDR",
         reminderTime: 1,
         successRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success?order_id=${orderResult._id}`,
         failureRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/failed?order_id=${orderResult._id}`,
         
-        // Safe items array (no negative prices)
         items: invoiceItems,
         
         customerNotificationPreference: {
@@ -503,7 +587,6 @@ export async function POST(request) {
         invoiceDuration: 86400, // 24 hours
       };
 
-      // Validate invoice request before sending
       console.log("Validated Invoice request:", {
         externalId: invoiceRequest.externalId,
         amount: invoiceRequest.amount,
@@ -511,15 +594,9 @@ export async function POST(request) {
         payerEmail: invoiceRequest.payerEmail,
         itemsCount: invoiceItems.length,
         hasShipping: shippingCost > 0,
-        hasDiscount: cartCalculation?.discount > 0
+        hasDiscount: cartCalculation?.discount > 0,
+        isGuest: orderResult.isGuest
       });
-
-      console.log("Safe invoice items breakdown:", invoiceItems.map(item => ({
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        category: item.category
-      })));
 
       const invoice = await Invoice.createInvoice({
         data: invoiceRequest,
@@ -533,12 +610,12 @@ export async function POST(request) {
         .set({ 
           xenditInvoiceId: invoice.id,
           xenditInvoiceUrl: invoice.invoiceUrl,
-          expiredAt: new Date(Date.now() + 86400000).toISOString() // 24 hours from now
+          expiredAt: new Date(Date.now() + 86400000).toISOString()
         })
         .commit();
 
-      // After successful order, update user's lifetime spend
-      if (userData && userData._id) {
+      // UPDATED: Update user's lifetime spend (only for registered users)
+      if (userData && userData._id && !userData.isGuest) {
         try {
           await sanityAdminClient
             .patch(userData._id)
@@ -548,7 +625,6 @@ export async function POST(request) {
             .commit();
         } catch (err) {
           console.error("Error updating user lifetime spend:", err);
-          // Continue with successful checkout even if this update fails
         }
       }
 
@@ -558,7 +634,8 @@ export async function POST(request) {
         invoice_url: invoice.invoiceUrl,
         xendit_invoice_id: invoice.id,
         order_number: orderId,
-        email_sent: true, // Indicate email was sent
+        email_sent: true,
+        is_guest: orderResult.isGuest,
         debug: {
           skusFetched: transformedProducts.length,
           productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`),
@@ -568,7 +645,9 @@ export async function POST(request) {
           hasDiscount: cartCalculation?.discount > 0,
           discountAmount: orderResult.discount?.amount,
           finalTotal: validatedFinalTotal,
-          productImagesIncluded: false
+          isGuest: orderResult.isGuest,
+          userEmail: orderResult.email,
+          accountCreated: createAccount && !isGuest
         }
       });
 
@@ -580,7 +659,6 @@ export async function POST(request) {
         response: xenditError.response
       });
       
-      // Log more detailed error info
       if (xenditError.response?.errors) {
         console.error("❌ Xendit validation errors:", xenditError.response.errors);
       }

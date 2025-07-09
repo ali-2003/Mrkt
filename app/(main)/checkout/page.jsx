@@ -9,6 +9,7 @@ import { client } from "@/sanity/lib/client";
 import { toast } from "react-toastify";
 import { emptyCart } from "@/redux/slice/cartSlice";
 import urlFor from "@/sanity/lib/image";
+import Link from "next/link";
 
 function CheckoutPageComponent() {
   const [loading, setLoading] = useState(false);
@@ -16,8 +17,9 @@ function CheckoutPageComponent() {
   const [selectedProvince, setSelectedProvince] = useState("");
   const [shippingCost, setShippingCost] = useState(0);
   const [cartCalculation, setCartCalculation] = useState(null);
+  const [createAccount, setCreateAccount] = useState(false);
   
-  // Form data - Updated for Indonesian address format
+  // Form data - Updated for guest checkout
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -28,7 +30,10 @@ function CheckoutPageComponent() {
     postalCode: "",
     province: "",
     country: "Indonesia",
-    notes: ""
+    notes: "",
+    // Additional fields for account creation
+    password: "",
+    confirmPassword: ""
   });
 
   const router = useRouter();
@@ -39,21 +44,6 @@ function CheckoutPageComponent() {
   const cart = useSelector((state) => state.cart);
   const { items, discount } = cart;
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!session) {
-      router.push("/auth/masuk");
-      return;
-    }
-    
-    // Pre-fill form with session data
-    setFormData(prev => ({
-      ...prev,
-      fullName: session.user.name || "",
-      email: session.user.email || ""
-    }));
-  }, [session, router]);
-
   // Redirect if cart is empty
   useEffect(() => {
     if (!items || items.length === 0) {
@@ -61,6 +51,17 @@ function CheckoutPageComponent() {
       return;
     }
   }, [items, router]);
+
+  // Pre-fill form with session data if user is logged in
+  useEffect(() => {
+    if (session?.user) {
+      setFormData(prev => ({
+        ...prev,
+        fullName: session.user.name || "",
+        email: session.user.email || ""
+      }));
+    }
+  }, [session]);
 
   // ABANDONMENT EMAIL TRACKING - Capture email when user types it
   useEffect(() => {
@@ -99,14 +100,14 @@ function CheckoutPageComponent() {
     fetchProvinces();
   }, []);
 
-  // CRITICAL FIX: Use the same discount calculation logic as the cart page
+  // UPDATED: Same discount calculation logic as cart page (works for guests)
   const calculateCartTotals = async () => {
     if (!items || items.length === 0) return null;
 
     try {
-      // Get user data for first order discount calculation
+      // Get user data for first order discount calculation (only for logged-in users)
       const getUserData = async () => {
-        if (!session?.user?.email) return null;
+        if (!session?.user?.email) return { orderCount: 0, lifetimeSpend: 0 };
         try {
           const userData = await client.fetch(
             `*[_type == 'user' && email == $email][0]{
@@ -165,8 +166,9 @@ function CheckoutPageComponent() {
           .reduce((total, item) => total + (item.sum || 0), 0);
       };
       
+      // Allow discounts for non-business users (including guests)
       const isEligibleForDiscounts = () => {
-        return !session || session?.user?.type !== 'business';
+        return !session?.user?.accountType || session?.user?.accountType !== 'business';
       };
 
       const bottleCount = countProductTypes(validItems, 'bottle');
@@ -175,7 +177,7 @@ function CheckoutPageComponent() {
 
       let bestDiscount = { amount: 0, details: null };
 
-      // Check for first order discount (logged in users only)
+      // Check for first order discount (ONLY for logged in users with no previous orders)
       if (session?.user && userDataObj?.orderCount === 0) {
         const discountAmount = subtotal * 0.2;
         if (discountAmount > bestDiscount.amount) {
@@ -191,7 +193,7 @@ function CheckoutPageComponent() {
         }
       }
 
-      // If not a business account, check for bundle discounts
+      // Bundle and volume discounts available for all non-business users (including guests)
       if (isEligibleForDiscounts()) {
         if (hasPodDevice && bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.5;
@@ -342,11 +344,30 @@ function CheckoutPageComponent() {
       toast.error("Harap pilih provinsi");
       return false;
     }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      toast.error("Format email tidak valid");
+      return false;
+    }
+
+    // If user wants to create account, validate password fields
+    if (createAccount && !session) {
+      if (!formData.password || formData.password.length < 6) {
+        toast.error("Password minimal 6 karakter");
+        return false;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        toast.error("Konfirmasi password tidak cocok");
+        return false;
+      }
+    }
     
     return true;
   };
 
-  // Handle form submission
+  // UPDATED: Handle form submission for both logged-in users and guests
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -368,39 +389,96 @@ function CheckoutPageComponent() {
         notes: formData.notes
       };
 
+      // Prepare checkout data in the format the API expects
+      const checkoutData = {
+        items: items || [],
+        shippingCost: shippingCost || 0,
+        discount: discount || null,
+        discountCalculation: cartCalculation,
+        user: session?.user || null,
+        shippingInfo,
+        // Additional flags
+        isGuest: !session?.user,
+        userEmail: session?.user?.email || formData.email,
+        // Include account creation data if guest wants to create account
+        ...(createAccount && !session && {
+          createAccount: true,
+          accountData: {
+            email: formData.email,
+            password: formData.password,
+            fullName: formData.fullName,
+            phone: formData.phone
+          }
+        })
+      };
+
+      console.log("Sending checkout data:", {
+        itemCount: checkoutData.items?.length,
+        hasDiscount: !!checkoutData.discount,
+        isGuest: checkoutData.isGuest,
+        userEmail: checkoutData.userEmail,
+        shippingCost: checkoutData.shippingCost
+      });
+
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          items,
-          shippingCost,
-          discount,
-          discountCalculation: cartCalculation,
-          user: session.user,
-          shippingInfo
-        }),
+        body: JSON.stringify(checkoutData),
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Checkout API Error:", errorText);
+        throw new Error(`Checkout gagal: ${response.status} - ${errorText}`);
+      }
+
       const data = await response.json();
+      console.log("Checkout response:", data);
 
       if (!data.success) {
         throw new Error(data.message || "Checkout gagal");
       }
 
-      // ABANDONMENT EMAIL TRACKING - Mark purchase complete to prevent abandonment emails
-      window.abandonmentSystem?.markPurchaseComplete();
+      if (!data.invoice_url) {
+        throw new Error("Invoice URL tidak ditemukan dalam respons");
+      }
 
-      // Clear cart and redirect to Xendit payment page
+      // ABANDONMENT EMAIL TRACKING - Mark purchase complete to prevent abandonment emails
+      if (window.abandonmentSystem) {
+        window.abandonmentSystem.markPurchaseComplete();
+      }
+
+      // Clear cart
       dispatch(emptyCart());
       
-      // Redirect to Xendit invoice URL
-      window.location.href = data.invoice_url;
+      // Show success message
+      toast.success("Pesanan berhasil dibuat! Mengalihkan ke halaman pembayaran...");
+
+      // Wait a moment for the toast to show, then redirect
+      setTimeout(() => {
+        try {
+          // Force redirect to Xendit payment page
+          window.location.replace(data.invoice_url);
+        } catch (redirectError) {
+          console.error("Redirect error:", redirectError);
+          // Fallback: try regular href assignment
+          window.location.href = data.invoice_url;
+        }
+      }, 1000);
 
     } catch (error) {
       console.error("Checkout error:", error);
-      toast.error(error.message || "Terjadi kesalahan saat checkout");
+      
+      // Show specific error message
+      if (error.message.includes("400")) {
+        toast.error("Data checkout tidak valid. Harap periksa kembali form Anda.");
+      } else if (error.message.includes("500")) {
+        toast.error("Terjadi kesalahan server. Silakan coba lagi.");
+      } else {
+        toast.error(error.message || "Terjadi kesalahan saat checkout");
+      }
     } finally {
       setLoading(false);
     }
@@ -430,7 +508,7 @@ function CheckoutPageComponent() {
   const subtotalAfterDiscount = cartCalculation?.total || (items?.reduce((total, item) => total + (item.sum || 0), 0) || 0);
   const finalTotal = subtotalAfterDiscount + shippingCost;
 
-  if (!session || !items || items.length === 0) {
+  if (!items || items.length === 0) {
     return <div>Memuat...</div>;
   }
 
@@ -439,6 +517,18 @@ function CheckoutPageComponent() {
       <div className="page-content">
         <div className="checkout">
           <div className="container">
+            {/* Login suggestion for guests */}
+            {!session && (
+              <div className="alert alert-info mb-4">
+                <div className="d-flex justify-content-between align-items-center">
+                  <span>
+                    <i className="icon-user"></i> Sudah punya akun? 
+                    <Link href="/auth/masuk" className="ml-1 font-weight-bold">Masuk sekarang</Link> untuk mendapat diskon pesanan pertama 15%!
+                  </span>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit}>
               <div className="row">
                 {/* Shipping Information */}
@@ -467,6 +557,7 @@ function CheckoutPageComponent() {
                         value={formData.email}
                         onChange={handleInputChange}
                         required
+                        disabled={!!session?.user?.email} // Disable if user is logged in
                       />
                     </div>
                   </div>
@@ -570,6 +661,53 @@ function CheckoutPageComponent() {
                     onChange={handleInputChange}
                     placeholder="Catatan khusus untuk pesanan Anda, misalnya instruksi pengiriman khusus."
                   ></textarea>
+
+                  {/* Account creation option for guests */}
+                  {!session && (
+                    <div className="mt-4">
+                      <div className="custom-control custom-checkbox">
+                        <input
+                          type="checkbox"
+                          className="custom-control-input"
+                          id="createAccount"
+                          checked={createAccount}
+                          onChange={(e) => setCreateAccount(e.target.checked)}
+                        />
+                        <label className="custom-control-label" htmlFor="createAccount">
+                          Buat akun untuk pesanan yang lebih mudah di masa depan
+                        </label>
+                      </div>
+
+                      {createAccount && (
+                        <div className="row mt-3">
+                          <div className="col-sm-6">
+                            <label>Password *</label>
+                            <input
+                              type="password"
+                              name="password"
+                              className="form-control"
+                              value={formData.password}
+                              onChange={handleInputChange}
+                              placeholder="Minimal 6 karakter"
+                              required={createAccount}
+                            />
+                          </div>
+                          <div className="col-sm-6">
+                            <label>Konfirmasi Password *</label>
+                            <input
+                              type="password"
+                              name="confirmPassword"
+                              className="form-control"
+                              value={formData.confirmPassword}
+                              onChange={handleInputChange}
+                              placeholder="Konfirmasi password"
+                              required={createAccount}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Order Summary */}

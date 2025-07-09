@@ -154,6 +154,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
   };
 
   const averageRating = calculateAverageRating(getReviewsArray());
+
   const totalReviewCount = getTotalReviews();
   const reviewsArray = getReviewsArray();
 
@@ -180,17 +181,47 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
     return <p className="text-gray-700">{description}</p>;
   };
 
+  // Simple and reliable star rendering function
   const renderStars = (rating) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <Star
-        key={i}
-        className={`w-4 h-4 ${
-          i < Math.floor(rating)
-            ? 'fill-yellow-400 text-yellow-400'
-            : 'text-gray-300'
-        }`}
-      />
-    ));
+    return (
+      <div className="flex items-center">
+        {[1, 2, 3, 4, 5].map((star) => {
+          const filled = rating >= star;
+          const partiallyFilled = rating > star - 1 && rating < star;
+          const fillPercentage = partiallyFilled ? ((rating - (star - 1)) * 100) : 0;
+          
+          return (
+            <div key={star} className="relative">
+              {partiallyFilled ? (
+                <div className="relative">
+                  <Star className="w-4 h-4 text-gray-300" />
+                  <div 
+                    className="absolute top-0 left-0 overflow-hidden"
+                    style={{ width: `${fillPercentage}%` }}
+                  >
+                    <svg 
+                      className="w-4 h-4 fill-yellow-400 text-yellow-400" 
+                      fill="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                  </div>
+                </div>
+              ) : (
+                <svg 
+                  className={`w-4 h-4 ${filled ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`}
+                  fill="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -229,7 +260,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
 
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex items-center gap-2">
-                  <div className="flex">{renderStars(averageRating)}</div>
+                  {renderStars(averageRating)}
                   <span className="text-sm">({totalReviewCount} reviews)</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -402,34 +433,30 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
         </section>
       )}
 
-      {/* Color Options */}
+      {/* UPDATED Color Options - Bigger images, no color dots */}
       {deviceData.colors && deviceData.colors.length > 0 && (
         <section className="color-section py-16 bg-gray-50">
           <div className="container">
             <h2 className="text-3xl font-bold text-center mb-12">Warna yang Tersedia</h2>
             <div className="flex justify-center">
-              <div className={`flex gap-6 flex-wrap justify-center ${
+              <div className={`flex gap-8 flex-wrap justify-center ${
                 deviceData.colors.length === 1 ? 'max-w-xs' :
                 deviceData.colors.length === 2 ? 'max-w-md' :
                 deviceData.colors.length === 3 ? 'max-w-lg' :
-                'max-w-2xl'
+                'max-w-3xl'
               }`}>
                 {deviceData.colors.map((color, index) => (
                   <div key={index} className="text-center group cursor-pointer">
                     <div className="relative mb-3">
                       <Image
-                        src={color.image || "/api/placeholder/100/100"}
+                        src={color.image || "/api/placeholder/150/150"}
                         alt={color.name}
-                        width={100}
-                        height={100}
-                        className="w-24 h-24 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow"
+                        width={150}
+                        height={150}
+                        className="w-36 h-36 rounded-lg shadow-lg group-hover:shadow-xl transition-shadow object-cover"
                       />
-                      <div
-                        className="absolute -top-2 -right-2 w-6 h-6 rounded-full border-2 border-white shadow-md"
-                        style={{ backgroundColor: color.color }}
-                      ></div>
                     </div>
-                    <p className="font-medium text-sm">{color.name}</p>
+                    <p className="font-medium text-base">{color.name}</p>
                   </div>
                 ))}
               </div>
@@ -574,7 +601,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                     <div className="flex items-center gap-4 mb-4">
                       <div className="text-4xl font-bold">{averageRating}</div>
                       <div>
-                        <div className="flex">{renderStars(averageRating)}</div>
+                        {renderStars(averageRating)}
                         <p className="text-gray-600">Based on {totalReviewCount} reviews</p>
                       </div>
                     </div>
@@ -624,7 +651,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <div className="flex">{renderStars(review.rating || 0)}</div>
+                                  {renderStars(review.rating || 0)}
                                   <span className="text-gray-500 text-sm">
                                     {review.reviewDate ? formatReviewDate(review.reviewDate) : 'Recently'}
                                   </span>
@@ -707,14 +734,16 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                     ) : (
                       // Fallback to sample reviews if no real reviews exist
                       [
-                        { customerName: "John D.", rating: 5, comment: "Excellent build quality and amazing battery life. Highly recommend!", reviewDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString() },
-                        { customerName: "Sarah M.", rating: 4, comment: "Great device overall. The flavor is outstanding and it's very easy to use.", reviewDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() },
-                        { customerName: "Mike R.", rating: 5, comment: "Best vape I've owned. The design is sleek and performance is top-notch.", reviewDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }
+                        { customerName: "John D.", rating: 4.7, comment: "Excellent build quality and amazing battery life. Highly recommend!", reviewDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString() },
+                        { customerName: "Sarah M.", rating: 4.2, comment: "Great device overall. The flavor is outstanding and it's very easy to use.", reviewDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() },
+                        { customerName: "Mike R.", rating: 4.9, comment: "Best vape I've owned. The design is sleek and performance is top-notch.", reviewDate: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString() },
+                        { customerName: "Lisa K.", rating: 3.8, comment: "Good product but could improve battery life. Overall satisfied with purchase.", reviewDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString() },
+                        { customerName: "David W.", rating: 4.6, comment: "Sleek design and great performance. Would definitely buy again!", reviewDate: new Date(Date.now() - 75 * 24 * 60 * 60 * 1000).toISOString() }
                       ].map((review, index) => (
                         <div key={index} className="border-b border-gray-200 pb-4">
                           <div className="flex items-center gap-2 mb-2">
                             <span className="font-medium">{review.customerName}</span>
-                            <div className="flex">{renderStars(review.rating)}</div>
+                            {renderStars(review.rating)}
                             <span className="text-gray-500 text-sm">{formatReviewDate(review.reviewDate)}</span>
                           </div>
                           <p className="text-gray-700">{review.comment}</p>
@@ -725,37 +754,6 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="cta-section bg-gradient-to-r from-blue-600 to-purple-600 text-white py-16">
-        <div className="container text-center">
-          <h2 className="text-3xl font-bold mb-4">Ready to Experience Premium Vaping?</h2>
-          <p className="text-2xl mb-8 opacity-90 text-white">Join thousands of satisfied customers</p>
-          
-          {/* BUSINESS PRICING INDICATOR IN CTA */}
-          {isBusinessUser && deviceData?.business_price && (
-            <div className="mb-6">
-              <span className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm font-semibold">
-                💼 Special Business Pricing Available
-              </span>
-            </div>
-          )}
-
-          <div className="flex justify-center gap-4 flex-wrap">
-            <Link href={`/produk/${deviceData.slug?.current || deviceData.slug}`}>
-              <button className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
-                {/* UPDATED CTA PRICE WITH BUSINESS PRICING */}
-                See Product Details - {formatPrice(getDisplayPrice())}
-                {isBusinessUser && deviceData?.business_price && (
-                  <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full ml-2">
-                    Business
-                  </span>
-                )}
-              </button>
-            </Link>
           </div>
         </div>
       </section>

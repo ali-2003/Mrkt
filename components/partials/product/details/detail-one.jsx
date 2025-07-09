@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { isInWishlist } from "@/utils";
 import Link from "next/link";
-import { addToCart } from "@/redux/slice/cartSlice";
+import { addToCart, emptyCart } from "@/redux/slice/cartSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "react-toastify";
 import { nicotinePercentage } from "@/utils/constants";
@@ -21,6 +21,7 @@ function DetailOne(props) {
   const [productImageUrl, setProductImageUrl] = useState("");
   const [selectedColor, setSelectedColor] = useState(null);
   const [availableStock, setAvailableStock] = useState(0);
+  const [isProcessingBuyNow, setIsProcessingBuyNow] = useState(false);
 
   const { data: session } = useSession();
 
@@ -198,42 +199,47 @@ function DetailOne(props) {
     }
   }
 
-  function onCartClick() {
+  // Helper function to validate product before adding to cart
+  function validateProductForPurchase() {
     const currentStock = selectedColor ? selectedColor.stock : product?.stock;
     const minQty = getMinQuantity();
     
     // BUSINESS QUANTITY - Enhanced stock validation
     if (!currentStock || currentStock < 1) {
       toast.error("Product is out of stock");
-      return;
+      return false;
     }
 
     // Check minimum quantity requirement for business users
     if (isBusinessUser && qty < minQty) {
       toast.error(`Business orders require minimum ${minQty} units`);
-      return;
+      return false;
     }
 
     // Check if requested quantity exceeds stock
     if (qty > currentStock) {
       toast.error(`Only ${currentStock} units available in stock`);
-      return;
+      return false;
     }
 
     // Check if business user has enough stock for minimum order
     if (isBusinessUser && !hasEnoughStockForBusinessOrder()) {
       toast.error(`Insufficient stock for business order (minimum ${minQty} units required)`);
-      return;
+      return false;
     }
 
     // Check if color is selected for pod products
     if (product?.productType === 'pod' && !selectedColor) {
       toast.error("Please select a color");
-      return;
+      return false;
     }
 
-    // Create product with color information for cart
-    const productToAdd = {
+    return true;
+  }
+
+  // Helper function to create product object for cart
+  function createCartProduct() {
+    return {
       ...product,
       // Add price based on user type
       displayPrice: getDisplayPrice(),
@@ -261,6 +267,14 @@ function DetailOne(props) {
         }
       })
     };
+  }
+
+  function onCartClick() {
+    if (!validateProductForPurchase()) {
+      return;
+    }
+
+    const productToAdd = createCartProduct();
 
     console.log("Adding to cart:", {
       productName: productToAdd.name,
@@ -270,16 +284,61 @@ function DetailOne(props) {
       displayPrice: productToAdd.displayPrice,
       isBusinessUser: productToAdd.isBusinessUser,
       quantity: qty,
-      minQuantity: minQty
+      minQuantity: getMinQuantity()
     });
 
     for (let i = 0; i < qty; i++) {
       dispatch(addToCart(productToAdd));
     }
     
-    const colorText = selectedColor ? ` (${selectedColor.colorName})` : '';
-    const userTypeText = isBusinessUser ? ' (Business Order)' : '';
-    toast.success(`${qty} unit(s)${colorText} added to cart${userTypeText}`);
+    // Simple quantity notification only
+    toast.success(`${qty} unit(s) added`);
+  }
+
+  // NEW BUY NOW FUNCTION
+  async function onBuyNowClick() {
+    if (!validateProductForPurchase()) {
+      return;
+    }
+
+    setIsProcessingBuyNow(true);
+
+    try {
+      const productToAdd = createCartProduct();
+
+      console.log("Buy Now - Clearing cart and adding product:", {
+        productName: productToAdd.name,
+        selectedColor: productToAdd.selectedColor,
+        cartImage: productToAdd.cartImage,
+        displayName: productToAdd.displayName,
+        displayPrice: productToAdd.displayPrice,
+        isBusinessUser: productToAdd.isBusinessUser,
+        quantity: qty,
+        minQuantity: getMinQuantity()
+      });
+
+      // CLEAR CART FIRST - This ensures only the selected item goes to checkout
+      dispatch(emptyCart());
+
+      // Add product to cart (now empty cart)
+      for (let i = 0; i < qty; i++) {
+        dispatch(addToCart(productToAdd));
+      }
+      
+      // Simple notification for buy now
+      toast.success(`${qty} unit(s) added. Redirecting to checkout...`);
+      
+      // Small delay to let the toast show and cart update
+      setTimeout(() => {
+        // Redirect to checkout page
+        router.push('/checkout');
+      }, 1000);
+
+    } catch (error) {
+      console.error("Buy Now error:", error);
+      toast.error("Failed to process purchase. Please try again.");
+      setIsProcessingBuyNow(false);
+    }
   }
 
   // Enhanced Facebook sharing for better desktop pre-filling and mobile app opening
@@ -586,17 +645,38 @@ function DetailOne(props) {
         </div>
       </div>
 
+      {/* UPDATED ACTION BUTTONS - Now includes Buy Now */}
       <div className="product-details-action">
-        <button
-          className={`btn-product btn-cart ${
-            availableStock < 1 || 
-            (product?.productType === 'pod' && !selectedColor) ||
-            (isBusinessUser && !hasEnoughStockForBusinessOrder()) ? "btn-disabled" : ""
-          }`}
-          onClick={onCartClick}
-        >
-          <span>Keranjang</span>
-        </button>
+        <div className="action-buttons-container">
+          {/* Add to Cart Button */}
+          <button
+            className={`btn-product btn-cart ${
+              availableStock < 1 || 
+              (product?.productType === 'pod' && !selectedColor) ||
+              (isBusinessUser && !hasEnoughStockForBusinessOrder()) ? "btn-disabled" : ""
+            }`}
+            onClick={onCartClick}
+          >
+            <span>Keranjang</span>
+          </button>
+
+          {/* Buy Now Button */}
+          <button
+            className={`btn-product btn-buy-now ${
+              availableStock < 1 || 
+              (product?.productType === 'pod' && !selectedColor) ||
+              (isBusinessUser && !hasEnoughStockForBusinessOrder()) ||
+              isProcessingBuyNow ? "btn-disabled" : ""
+            }`}
+            onClick={onBuyNowClick}
+            disabled={isProcessingBuyNow}
+          >
+            <span>
+              {isProcessingBuyNow ? "Processing..." : "Beli"}
+            </span>
+          </button>
+        </div>
+
         <div className="details-action-wrapper">
           {isInWishlist(wishlist, product) ? (
             <Link
@@ -855,6 +935,61 @@ function DetailOne(props) {
         .vertical-quantity[type=number] {
           -moz-appearance: textfield;
         }
+
+        /* NEW BUY NOW BUTTON STYLING */
+        .action-buttons-container {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 15px;
+        }
+
+        .btn-buy-now {
+          background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+          color: white !important;
+          border: none;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
+        }
+
+        .btn-buy-now:hover:not(.btn-disabled) {
+          background: linear-gradient(135deg, #e55a2b 0%, #e8851a 100%);
+          box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+          transform: translateY(-1px);
+        }
+
+        .btn-buy-now.btn-disabled {
+          background: #cccccc;
+          color: #666666 !important;
+          box-shadow: none;
+          cursor: not-allowed;
+        }
+
+        .btn-cart {
+          background: #0088cc;
+          color: white !important;
+          border: none;
+        }
+
+        .btn-cart:hover:not(.btn-disabled) {
+          background: #0077b3;
+        }
+
+        .btn-product {
+          flex: 1;
+          padding: 12px 20px;
+          font-size: 14px;
+          font-weight: 600;
+          text-transform: uppercase;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          text-align: center;
+          text-decoration: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 45px;
+        }
         
         @media (max-width: 768px) {
           .color-options {
@@ -883,6 +1018,17 @@ function DetailOne(props) {
           .btn-spinner {
             width: 30px;
             height: 30px;
+          }
+
+          .action-buttons-container {
+            flex-direction: column;
+            gap: 8px;
+          }
+
+          .btn-product {
+            padding: 10px 16px;
+            font-size: 13px;
+            min-height: 40px;
           }
         }
       `}</style>

@@ -42,8 +42,8 @@ const HomePage = async () => {
   const homePageData = await fetchHomeData()
 
   const products = await fetchData()
-  const bestSellers = products.filter(product => product?.showInTrendy === true)
-  const hotProducts = products.filter(product => product?.hot === true)
+  const bestSellers = products.filter(product => product?.showInTrendy === true && product?.productType === "bottle")
+  const hotProducts = products.filter(product => product?.hot === true && product?.productType === "bottle")
 
   return <HomePageComponent homePageData={homePageData} products={products} bestSellers={bestSellers} hotProducts={hotProducts} />
 }

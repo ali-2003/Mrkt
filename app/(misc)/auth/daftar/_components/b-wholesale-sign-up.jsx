@@ -246,9 +246,9 @@ const BusinessWholesaleSignUpComponent = ({ type }) => {
               checked={formData.agreementChecked}
               onChange={handleCheckboxChange}
             />
-            <label className={`custom-control-label ${formErrors?.agreementChecked ? "text-red-600" : "text-black"}`} htmlFor="register-policy-2">
+            {/* <label className={`custom-control-label ${formErrors?.agreementChecked ? "text-red-600" : "text-black"}`} htmlFor="register-policy-2">
               Saya merupakan penjual tembakau elektronik berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan bisnis/komersial*
-            </label>
+            </label> */}
           </div>
 
           <button type="button" onClick={handleSubmit} disabled={loading} className="btn btn-outline-primary-2 mt-3">

@@ -376,14 +376,14 @@ const IndividualSignUpComponent = ({ type }) => {
               checked={formData.agreementChecked}
               onChange={handleCheckboxChange}
             />
-            <label
+            {/* <label
               className={`custom-control-label ${
                 formErrors?.agreementChecked ? "text-red-600" : "text-black"
               }`}
               htmlFor="register-policy-2"
             >
               Saya menyatakan bahwa saya adalah perokok dan/atau pengguna produk tembakau alternatif berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan pribadi saya sendiri*
-            </label>
+            </label> */}
           </div>
 
           <button

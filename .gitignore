@@ -36,3 +36,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+echo "node_modules.zip" >> .gitignore
+echo "next.zip" >> .gitignore
+echo "*.zip" >> .gitignore
+echo "node_modules/" >> .gitignore
+echo ".next/" >> .gitignore

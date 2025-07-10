@@ -180,10 +180,10 @@ function HomePageComponent({
                   <div className="banner-content content-top">
 
                     <h3 className="banner-title font-weight-normal text-primary justify-center">
-                      {homePageData?.benefitText1 || "Penawaran khusus"}
+                      {/* {homePageData?.benefitText1 || "Penawaran khusus"} */}
                     </h3>
                     <p className="font-weight-normal text-black">
-                      {homePageData?.benefitSubText1 || "Temukan penawaran luar biasa"}
+                      {/* {homePageData?.benefitSubText1 || "Temukan penawaran luar biasa"} */}
                     </p>
                   </div>
                   <div className="banner-content content-bottom">

@@ -293,7 +293,7 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
               </div>
               <Link href={`/produk/${deviceData.slug?.current || deviceData.slug}`}>
                 <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-colors">
-                  See Product Details
+                  Lihat Detail Produk
                 </button>
               </Link>
             </div>

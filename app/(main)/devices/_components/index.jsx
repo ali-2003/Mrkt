@@ -236,18 +236,18 @@ function ProductShowcasePage({ device, title = "Device", subTitle = "Vape Device
             <li className="breadcrumb-item">
               <Link href="/products">Products</Link>
             </li>
-            <li className="breadcrumb-item active">{deviceData.name}</li>
+            <li className="breadcrumb-item active ">{deviceData.name}</li>
           </ol>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="hero-section bg-gradient-to-r from-slate-900 to-slate-700 text-white py-20">
+      <section className="hero-section text-gray-900 py-20" style={{backgroundColor: '#FAFAFA'}, {textTransform: "uppercase"}}>
         <div className="container">
           <div className="row items-center">
             <div className="col-lg-6">
-              <h1 className="text-5xl font-bold mb-4 text-white">{deviceData.name}</h1>
-              <p className="text-xl mb-6 text-gray-300">{deviceData.tagline}</p>
+              <h1 className="text-5xl font-bold mb-4 text-gray-900">{deviceData.name}</h1>
+              <p className="text-xl mb-6 text-gray-900">{deviceData.tagline}</p>
               
               {/* BUSINESS USER INDICATOR */}
               {isBusinessUser && deviceData?.business_price && (

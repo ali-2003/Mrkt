@@ -71,7 +71,7 @@ function HomePageComponent({
                     duration={1000}
                   >
                     <h5 className="banner-subtitle font-weight-normal text-primary">
-                      {banner?.tagline || "Welcome"}
+                      {banner?.tagline || "Salamat Datang"}
                     </h5>
                   </Reveal>
 
@@ -91,7 +91,7 @@ function HomePageComponent({
                     duration={1000}
                   >
                     <p className="banner-desc font-weight-normal text-primary mb-3">
-                      {banner?.subText || "Discover our amazing collection"}
+                      {banner?.subText || "Temukan pengalaman rasa terbaik dari koleksi premium kami"}
                     </p>
                   </Reveal>
 
@@ -154,6 +154,7 @@ function HomePageComponent({
 
       <section className="banner-section banner-2cols-with-gap">
         <div className="container">
+          
           <div className="row">
             <div className="col-md-7">
               <Reveal
@@ -177,11 +178,12 @@ function HomePageComponent({
                   </figure>
 
                   <div className="banner-content content-top">
-                    <h3 className="banner-title font-weight-normal text-white">
-                      {homePageData?.benefitText1 || "Special Offer"}
+
+                    <h3 className="banner-title font-weight-normal text-primary justify-center">
+                      {homePageData?.benefitText1 || "Penawaran khusus"}
                     </h3>
-                    <p className="font-weight-normal text-white">
-                      {homePageData?.benefitSubText1 || "Discover amazing deals"}
+                    <p className="font-weight-normal text-black">
+                      {homePageData?.benefitSubText1 || "Temukan penawaran luar biasa"}
                     </p>
                   </div>
                   <div className="banner-content content-bottom">
@@ -204,8 +206,8 @@ function HomePageComponent({
                 triggerOnce
               >
                 <div className="banner banner-2 text-center">
-                  <div className="banner-title font-weight-normal text-primary text-left">
-                    {homePageData?.benefitText2 || "Premium Quality"}
+                  <div className="banner-title font-weight-normal text-primary justify-center">
+                    {homePageData?.benefitText2 || "Arya Prime"}
                   </div>
                   <figure className="text-center lazy-media mb-0">
                     <div className="lazy-overlay"></div>
@@ -301,69 +303,37 @@ function HomePageComponent({
                   </figure>
 
                   {products?.length ? (
-                    <>
-                      {products.slice(0, 1).map((item, index) => (
-                        <div
-                          className={`hotspot-wrapper hotspot-1`}
-                          key={`hotspot-1-${item?.id || index}`}
-                        >
-                          <Link href="/produk/mangga-murni" className="hotspot">
-                            <i className="icon-plus"></i>
-                          </Link>
-
-                          <ProductThirteen product={item} />
-                        </div>
-                      ))}
-
-                      {products?.slice(9, 10).map((item, index) => (
-                        <div
-                          className={`hotspot-wrapper hotspot-2`}
-                          key={`hotspot-2-${item?.id || index}`}
-                        >
-                          <Link href="/produk/perpaduan-buah-beri" className="hotspot">
-                            <i className="icon-plus"></i>
-                          </Link>
-
-                          <ProductThirteen product={item} />
-                        </div>
-                      ))}
-
-                      {products?.slice(5, 6).map((item, index) => (
-                        <div
-                          className={`hotspot-wrapper hotspot-3`}
-                          key={`hotspot-3-${item?.id || index}`}
-                        >
-                          <Link href="/produk/kue-keju-stroberi" className="hotspot">
-                            <i className="icon-plus"></i>
-                          </Link>
-
-                          <ProductThirteen product={item} />
-                        </div>
-                      ))}
-
-                      {products?.slice(4, 5).map((item, index) => (
-                        <div
-                          className={`hotspot-wrapper hotspot-4`}
-                          key={`hotspot-4-${item?.id || index}`}
-                        >
-                          <Link href="/produk/tembakau-klasik" className="hotspot">
-                            <i className="icon-plus"></i>
-                          </Link>
-
-                          <ProductThirteen product={item} />
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="banner-content">
-                      <Link
-                        href="/ejuice"
-                        className="btn btn-primary"
-                      >
-                        DAPATKAN SEGERA<i className="icon-angle-right"></i>
-                      </Link>
-                    </div>
-                  )}
+  <>
+    {[
+      { id: 30, className: 'hotspot-1', href: '/produk/mangga-murni' },
+      { id: 24, className: 'hotspot-2', href: '/produk/perpaduan-buah-beri' },
+      { id: 23, className: 'hotspot-3', href: '/produk/kue-keju-stroberi' },
+      { id: 29, className: 'hotspot-4', href: '/produk/tembakau-klasik' }
+    ].map((config, index) => {
+      const product = products.find(item => item.id === config.id);
+      return product ? (
+        <div
+          className={`hotspot-wrapper ${config.className}`}
+          key={`${config.className}-${product.id}`}
+        >
+          <Link href={config.href} className="hotspot">
+            <i className="icon-plus"></i>
+          </Link>
+          <ProductThirteen product={product} />
+        </div>
+      ) : null;
+    })}
+  </>
+) : (
+  <div className="banner-content">
+    <Link
+      href="/ejuice"
+      className="btn btn-primary"
+    >
+      DAPATKAN SEGERA<i className="icon-angle-right"></i>
+    </Link>
+  </div>
+)}
                 </div>
               </Reveal>
             </div>

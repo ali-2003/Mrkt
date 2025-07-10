@@ -728,7 +728,7 @@ function DetailOne(props) {
             title="Copy link"
             onClick={copyLink}
           >
-            <i className="icon-copy"></i>
+            <i className="fas fa-link"></i>
           </a>
         </div>
       </div>

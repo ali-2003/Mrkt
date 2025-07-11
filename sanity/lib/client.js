@@ -1,26 +1,29 @@
 // sanity/lib/client.js
-import { createClient } from '@sanity/client'
+import { createClient } from 'next-sanity'
+
+const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || 'tv2rto4y'
+const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || 'production'
+const apiVersion = process.env.NEXT_PUBLIC_SANITY_API_VERSION || '2024-01-15'
 
 export const client = createClient({
-  projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
-  dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
-  useCdn: false, // Set to false for development and when using auth token
-  apiVersion: '2023-10-01',
-  token: process.env.SANITY_API_TOKEN, // Make sure this is using the correct env var name
-  perspective: 'published', // Add this
-  ignoreBrowserTokenWarning: true, // Add this to suppress warnings
+  projectId,
+  dataset,
+  apiVersion,
+  useCdn: true, // Set to false if statically generating pages, using ISR or tag-based revalidation
+  // Add these CORS configurations
+  withCredentials: true,
+  requestTagPrefix: 'sanity.',
+  perspective: 'published',
 })
 
-// Debug logging (remove in production)
-if (typeof window !== 'undefined') {
-  console.log('🔧 Sanity Client Configuration:');
-  console.log('Project ID:', process.env.NEXT_PUBLIC_SANITY_PROJECT_ID);
-  console.log('Dataset:', process.env.NEXT_PUBLIC_SANITY_DATASET);
-  console.log('Token available:', !!process.env.SANITY_API_TOKEN);
-  console.log('Client config:', {
-    projectId: client.config().projectId,
-    dataset: client.config().dataset,
-    token: client.config().token ? 'Token set' : 'No token',
-    useCdn: client.config().useCdn
-  });
-}
+export const sanityAdminClient = createClient({
+  projectId,
+  dataset,
+  apiVersion,
+  useCdn: false, // Ensure fresh data for admin operations
+  token: process.env.SANITY_API_TOKEN, // Make sure this is set in your environment
+  withCredentials: true,
+  perspective: 'published',
+})
+
+export default client

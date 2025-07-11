@@ -51,6 +51,8 @@ export async function POST(request) {
         image: item.image,
         img: item.img,
         thumbnail: item.thumbnail,
+        pictures: item.pictures,
+        cartImage: item.cartImage,
         availableFields: Object.keys(item)
       });
     });
@@ -172,6 +174,27 @@ export async function POST(request) {
       }
     }
     
+    // Helper function to extract image URL from cart item (now expecting processed URLs from frontend)
+    const getCartImageUrl = (cartItem) => {
+      // Try multiple possible image fields from cart (now expecting processed URLs)
+      const possibleImages = [
+        cartItem.imageUrl,
+        cartItem.processedImageUrl,
+        cartItem.image,
+        cartItem.cartImage,
+        cartItem.img,
+        cartItem.thumbnail
+      ];
+      
+      for (const imageField of possibleImages) {
+        if (imageField && typeof imageField === 'string' && (imageField.startsWith('http') || imageField.startsWith('https'))) {
+          return imageField;
+        }
+      }
+      
+      return null;
+    };
+
     // ======= FETCH SKUs AND IMAGES FROM SANITY =======
     console.log("🏷️ Fetching product SKUs and images from Sanity...");
     
@@ -179,6 +202,10 @@ export async function POST(request) {
       items.map(async (cartItem) => {
         try {
           console.log(`Fetching SKU and image for product ID: ${cartItem.id}`);
+          
+          // First, try to get image from cart data
+          const cartImageUrl = getCartImageUrl(cartItem);
+          console.log(`🖼️ Cart image for ${cartItem.name}: ${cartImageUrl ? 'FOUND' : 'NOT_FOUND'}`);
           
           // Fetch complete product from Sanity using the product ID
           const productFromSanity = await sanityAdminClient.fetch(`
@@ -204,7 +231,7 @@ export async function POST(request) {
               ...cartItem,
               shippingSku: `MANUAL-${cartItem.id}`,
               colorShippingSku: null,
-              imageUrl: cartItem.imageUrl || cartItem.image || null
+              imageUrl: cartImageUrl || null
             };
           }
 
@@ -225,13 +252,16 @@ export async function POST(request) {
             }
           }
 
-          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''} | Image: ${productFromSanity.imageUrl ? 'YES' : 'NO'}`);
+          // Use cart image first, then Sanity image as fallback
+          const finalImageUrl = cartImageUrl || productFromSanity.imageUrl || null;
+          
+          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''} | Image: ${finalImageUrl ? 'YES' : 'NO'} (Source: ${cartImageUrl ? 'CART' : (productFromSanity.imageUrl ? 'SANITY' : 'NONE')})`);
 
           return {
             ...cartItem,
             shippingSku: mainSKU || `MISSING-${cartItem.id}`,
             colorShippingSku: colorSKU,
-            imageUrl: productFromSanity.imageUrl || cartItem.imageUrl || cartItem.image || null
+            imageUrl: finalImageUrl
           };
 
         } catch (error) {
@@ -240,7 +270,7 @@ export async function POST(request) {
             ...cartItem,
             shippingSku: `ERROR-${cartItem.id}`,
             colorShippingSku: null,
-            imageUrl: cartItem.imageUrl || cartItem.image || null
+            imageUrl: getCartImageUrl(cartItem) || null
           };
         }
       })

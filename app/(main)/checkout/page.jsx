@@ -367,122 +367,134 @@ function CheckoutPageComponent() {
     return true;
   };
 
-  // UPDATED: Handle form submission for both logged-in users and guests
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    
-    try {
-      const shippingInfo = {
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone,
-        streetAddress: formData.streetAddress,
-        district: formData.district,
-        city: formData.city,
-        postalCode: formData.postalCode,
-        province: formData.province,
-        country: formData.country,
-        notes: formData.notes
-      };
+// UPDATED: Handle form submission - ADD IMAGE PROCESSING
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!validateForm()) return;
+  
+  setLoading(true);
+  
+  try {
+    const shippingInfo = {
+      fullName: formData.fullName,
+      email: formData.email,
+      phone: formData.phone,
+      streetAddress: formData.streetAddress,
+      district: formData.district,
+      city: formData.city,
+      postalCode: formData.postalCode,
+      province: formData.province,
+      country: formData.country,
+      notes: formData.notes
+    };
 
-      // Prepare checkout data in the format the API expects
-      const checkoutData = {
-        items: items || [],
-        shippingCost: shippingCost || 0,
-        discount: discount || null,
-        discountCalculation: cartCalculation,
-        user: session?.user || null,
-        shippingInfo,
-        // Additional flags
-        isGuest: !session?.user,
-        userEmail: session?.user?.email || formData.email,
-        // Include account creation data if guest wants to create account
-        ...(createAccount && !session && {
-          createAccount: true,
-          accountData: {
-            email: formData.email,
-            password: formData.password,
-            fullName: formData.fullName,
-            phone: formData.phone
-          }
-        })
-      };
+    // FIXED: Process image URLs using the same logic as the checkout display
+    const itemsWithImageUrls = items.map(item => ({
+      ...item,
+      imageUrl: getCartImage(item) // Add processed image URL
+    }));
 
-      console.log("Sending checkout data:", {
-        itemCount: checkoutData.items?.length,
-        hasDiscount: !!checkoutData.discount,
-        isGuest: checkoutData.isGuest,
-        userEmail: checkoutData.userEmail,
-        shippingCost: checkoutData.shippingCost
-      });
-
-      const response = await fetch("/api/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(checkoutData),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Checkout API Error:", errorText);
-        throw new Error(`Checkout gagal: ${response.status} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log("Checkout response:", data);
-
-      if (!data.success) {
-        throw new Error(data.message || "Checkout gagal");
-      }
-
-      if (!data.invoice_url) {
-        throw new Error("Invoice URL tidak ditemukan dalam respons");
-      }
-
-      // ABANDONMENT EMAIL TRACKING - Mark purchase complete to prevent abandonment emails
-      if (window.abandonmentSystem) {
-        window.abandonmentSystem.markPurchaseComplete();
-      }
-
-      // Clear cart
-      dispatch(emptyCart());
-      
-      // Show success message
-      toast.success("Pesanan berhasil dibuat! Mengalihkan ke halaman pembayaran...");
-
-      // Wait a moment for the toast to show, then redirect
-      setTimeout(() => {
-        try {
-          // Force redirect to Xendit payment page
-          window.location.replace(data.invoice_url);
-        } catch (redirectError) {
-          console.error("Redirect error:", redirectError);
-          // Fallback: try regular href assignment
-          window.location.href = data.invoice_url;
+    // Prepare checkout data in the format the API expects
+    const checkoutData = {
+      items: itemsWithImageUrls, // Use items with processed image URLs
+      shippingCost: shippingCost || 0,
+      discount: discount || null,
+      discountCalculation: cartCalculation,
+      user: session?.user || null,
+      shippingInfo,
+      // Additional flags
+      isGuest: !session?.user,
+      userEmail: session?.user?.email || formData.email,
+      // Include account creation data if guest wants to create account
+      ...(createAccount && !session && {
+        createAccount: true,
+        accountData: {
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.fullName,
+          phone: formData.phone
         }
-      }, 1000);
+      })
+    };
 
-    } catch (error) {
-      console.error("Checkout error:", error);
-      
-      // Show specific error message
-      if (error.message.includes("400")) {
-        toast.error("Data checkout tidak valid. Harap periksa kembali form Anda.");
-      } else if (error.message.includes("500")) {
-        toast.error("Terjadi kesalahan server. Silakan coba lagi.");
-      } else {
-        toast.error(error.message || "Terjadi kesalahan saat checkout");
-      }
-    } finally {
-      setLoading(false);
+    console.log("Sending checkout data:", {
+      itemCount: checkoutData.items?.length,
+      hasDiscount: !!checkoutData.discount,
+      isGuest: checkoutData.isGuest,
+      userEmail: checkoutData.userEmail,
+      shippingCost: checkoutData.shippingCost,
+      // Debug image info
+      itemsWithImages: checkoutData.items.map(item => ({
+        name: item.name,
+        hasImageUrl: !!item.imageUrl,
+        imageUrl: item.imageUrl
+      }))
+    });
+
+    const response = await fetch("/api/checkout", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(checkoutData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Checkout API Error:", errorText);
+      throw new Error(`Checkout gagal: ${response.status} - ${errorText}`);
     }
-  };
+
+    const data = await response.json();
+    console.log("Checkout response:", data);
+
+    if (!data.success) {
+      throw new Error(data.message || "Checkout gagal");
+    }
+
+    if (!data.invoice_url) {
+      throw new Error("Invoice URL tidak ditemukan dalam respons");
+    }
+
+    // ABANDONMENT EMAIL TRACKING - Mark purchase complete to prevent abandonment emails
+    if (window.abandonmentSystem) {
+      window.abandonmentSystem.markPurchaseComplete();
+    }
+
+    // Clear cart
+    dispatch(emptyCart());
+    
+    // Show success message
+    toast.success("Pesanan berhasil dibuat! Mengalihkan ke halaman pembayaran...");
+
+    // Wait a moment for the toast to show, then redirect
+    setTimeout(() => {
+      try {
+        // Force redirect to Xendit payment page
+        window.location.replace(data.invoice_url);
+      } catch (redirectError) {
+        console.error("Redirect error:", redirectError);
+        // Fallback: try regular href assignment
+        window.location.href = data.invoice_url;
+      }
+    }, 1000);
+
+  } catch (error) {
+    console.error("Checkout error:", error);
+    
+    // Show specific error message
+    if (error.message.includes("400")) {
+      toast.error("Data checkout tidak valid. Harap periksa kembali form Anda.");
+    } else if (error.message.includes("500")) {
+      toast.error("Terjadi kesalahan server. Silakan coba lagi.");
+    } else {
+      toast.error(error.message || "Terjadi kesalahan saat checkout");
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Format price
   const formatPrice = (price) => {

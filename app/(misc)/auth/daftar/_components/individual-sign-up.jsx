@@ -12,7 +12,6 @@ const initialState = {
   confirmPassword: "",
   whatsapp: "",
   dob: "",
-  agreementChecked: false,
 };
 
 const IndividualSignUpComponent = ({ type }) => {
@@ -72,15 +71,6 @@ const IndividualSignUpComponent = ({ type }) => {
     setFormErrors({});
   };
 
-  const handleCheckboxChange = (e) => {
-    setFormData((prevData) => ({
-      ...prevData,
-      agreementChecked: e.target.checked,
-    }));
-
-    setFormErrors({});
-  };
-
   const validateForm = (formData, type = 'credentials') => {
     const errors = {};
     
@@ -120,12 +110,6 @@ const IndividualSignUpComponent = ({ type }) => {
 
     if (!formData.whatsapp.trim()) {
       errors.whatsapp = "Please enter your WhatsApp number";
-      setFormErrors(errors);
-      return false;
-    }
-
-    if (!formData.agreementChecked) {
-      errors.agreementChecked = "Please agree to the privacy policy";
       setFormErrors(errors);
       return false;
     }
@@ -367,25 +351,6 @@ const IndividualSignUpComponent = ({ type }) => {
         </div>
 
         <div className="form-footer">
-          <div className="custom-control custom-checkbox">
-            <input
-              type="checkbox"
-              className="custom-control-input"
-              id="register-policy-2"
-              name="agreementChecked"
-              checked={formData.agreementChecked}
-              onChange={handleCheckboxChange}
-            />
-            {/* <label
-              className={`custom-control-label ${
-                formErrors?.agreementChecked ? "text-red-600" : "text-black"
-              }`}
-              htmlFor="register-policy-2"
-            >
-              Saya menyatakan bahwa saya adalah perokok dan/atau pengguna produk tembakau alternatif berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan pribadi saya sendiri*
-            </label> */}
-          </div>
-
           <button
             type="button"
             onClick={handleSubmit}

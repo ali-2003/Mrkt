@@ -1,4 +1,4 @@
-// app/api/checkout/route.js - COMPLETE FIXED VERSION WITH GUEST SUPPORT
+// app/api/checkout/route.js - COMPLETE FIXED VERSION WITH GUEST SUPPORT AND IMAGE URL
 import { NextResponse } from "next/server";
 import { sanityAdminClient } from "@/sanity/lib/client";
 import { calculateCartTotal } from "@/utils/discountValue";
@@ -39,6 +39,20 @@ export async function POST(request) {
       userEmail,
       createAccount,
       hasShippingInfo: !!shippingInfo
+    });
+    
+    // Debug cart items to see available fields
+    console.log("🔍 DEBUG: Cart items structure:");
+    items?.forEach((item, index) => {
+      console.log(`Item ${index}:`, {
+        name: item.name,
+        id: item.id,
+        imageUrl: item.imageUrl,
+        image: item.image,
+        img: item.img,
+        thumbnail: item.thumbnail,
+        availableFields: Object.keys(item)
+      });
     });
     
     // UPDATED: Validation for guest checkout
@@ -158,13 +172,13 @@ export async function POST(request) {
       }
     }
     
-    // ======= FETCH SKUs FROM SANITY =======
-    console.log("🏷️ Fetching product SKUs from Sanity...");
+    // ======= FETCH SKUs AND IMAGES FROM SANITY =======
+    console.log("🏷️ Fetching product SKUs and images from Sanity...");
     
     const enrichedItems = await Promise.all(
       items.map(async (cartItem) => {
         try {
-          console.log(`Fetching SKU for product ID: ${cartItem.id}`);
+          console.log(`Fetching SKU and image for product ID: ${cartItem.id}`);
           
           // Fetch complete product from Sanity using the product ID
           const productFromSanity = await sanityAdminClient.fetch(`
@@ -175,6 +189,7 @@ export async function POST(request) {
               slug,
               productType,
               shippingSku,
+              "imageUrl": images[0].asset->url,
               podColors[] {
                 colorName,
                 colorCode,
@@ -188,7 +203,8 @@ export async function POST(request) {
             return {
               ...cartItem,
               shippingSku: `MANUAL-${cartItem.id}`,
-              colorShippingSku: null
+              colorShippingSku: null,
+              imageUrl: cartItem.imageUrl || cartItem.image || null
             };
           }
 
@@ -209,12 +225,13 @@ export async function POST(request) {
             }
           }
 
-          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''}`);
+          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''} | Image: ${productFromSanity.imageUrl ? 'YES' : 'NO'}`);
 
           return {
             ...cartItem,
             shippingSku: mainSKU || `MISSING-${cartItem.id}`,
-            colorShippingSku: colorSKU
+            colorShippingSku: colorSKU,
+            imageUrl: productFromSanity.imageUrl || cartItem.imageUrl || cartItem.image || null
           };
 
         } catch (error) {
@@ -222,13 +239,14 @@ export async function POST(request) {
           return {
             ...cartItem,
             shippingSku: `ERROR-${cartItem.id}`,
-            colorShippingSku: null
+            colorShippingSku: null,
+            imageUrl: cartItem.imageUrl || cartItem.image || null
           };
         }
       })
     );
 
-    console.log("🎯 SKU fetching complete!");
+    console.log("🎯 SKU and image fetching complete!");
     
     // Use provided calculation if available, otherwise recalculate
     let cartCalculation = discountCalculation;
@@ -319,7 +337,7 @@ export async function POST(request) {
     // Generate order ID
     const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     
-    // Transform cart items with _key for Sanity
+    // FIXED: Transform cart items with _key for Sanity INCLUDING imageUrl
     const transformedProducts = enrichedItems.map((item, index) => {
       const productData = {
         _key: `product-${Date.now()}-${index}`,
@@ -331,6 +349,7 @@ export async function POST(request) {
         price: item.sale_price || item.price,
         totalPrice: item.sum,
         shippingSku: item.shippingSku,
+        imageUrl: item.imageUrl || null, // ADDED: Include imageUrl
       };
       
       if (item.colorShippingSku) {
@@ -347,10 +366,10 @@ export async function POST(request) {
       return productData;
     });
     
-    // Log the final products with SKUs
-    console.log("📦 Final products with SKUs:");
+    // Log the final products with SKUs and images
+    console.log("📦 Final products with SKUs and images:");
     transformedProducts.forEach(product => {
-      console.log(`   - ${product.name}: ${product.shippingSku}${product.colorShippingSku ? ` / ${product.colorShippingSku}` : ''}`);
+      console.log(`   - ${product.name}: ${product.shippingSku}${product.colorShippingSku ? ` / ${product.colorShippingSku}` : ''} | Image: ${product.imageUrl ? 'YES' : 'NO'}`);
     });
     
     // Prepare shipping info with proper field mapping for Indonesian address format
@@ -438,18 +457,18 @@ export async function POST(request) {
       isGuest: orderData.isGuest,
       userEmail: orderData.email,
       shippingInfo: orderData.shippingInfo,
-      productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku }))
+      productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku, hasImage: !!p.imageUrl }))
     });
     
     // Save order to Sanity
     const orderResult = await sanityAdminClient.create(orderData);
-    console.log("✅ Order saved successfully with SKUs:", orderResult._id);
+    console.log("✅ Order saved successfully with SKUs and images:", orderResult._id);
     
     // SEND EMAIL IMMEDIATELY AFTER ORDER CREATION
     try {
       console.log("📧 Sending order confirmation email immediately...");
       
-      // Prepare complete order data for email
+      // FIXED: Prepare complete order data for email INCLUDING imageUrl
       const emailOrderData = {
         ...orderResult,
         paidAt: new Date().toISOString(),
@@ -466,9 +485,15 @@ export async function POST(request) {
             skuNo: finalSKU,
             quantity: item.qty || 1,
             price: `Rp.${Math.round(item.sum || 0).toLocaleString('id-ID')}`,
+            imageUrl: item.imageUrl || null, // ADDED: Include imageUrl for email
           };
         })
       };
+      
+      console.log("📧 Email order data with images:");
+      emailOrderData.products.forEach((product, index) => {
+        console.log(`   Product ${index + 1}: ${product.name} | Image: ${product.imageUrl ? 'YES' : 'NO'} | SKU: ${product.skuNo}`);
+      });
       
       console.log("📧 Email order data:", {
         orderId: emailOrderData.orderId,
@@ -480,7 +505,7 @@ export async function POST(request) {
         savedDiscountAmount: orderResult.discount?.amount,
         shippingCost: shippingCost,
         isGuest: orderResult.isGuest,
-        productsWithSKUs: emailOrderData.products.map(p => ({ name: p.name, sku: p.skuNo }))
+        productsWithImages: emailOrderData.products.map(p => ({ name: p.name, hasImage: !!p.imageUrl, sku: p.skuNo }))
       });
       
       // Send the email
@@ -639,6 +664,7 @@ export async function POST(request) {
         debug: {
           skusFetched: transformedProducts.length,
           productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`),
+          productImages: transformedProducts.map(p => `${p.name}: ${p.imageUrl ? 'HAS_IMAGE' : 'NO_IMAGE'}`),
           emailAttempted: true,
           invoiceItemsCount: invoiceItems.length,
           hasShipping: shippingCost > 0,

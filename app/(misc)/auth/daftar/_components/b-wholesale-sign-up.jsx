@@ -1,4 +1,4 @@
-// BusinessWholesaleSignUpComponent (paste-7.txt updated)
+// BusinessWholesaleSignUpComponent - FIXED WITHOUT AGREEMENT VALIDATION
 "use client";
 
 import { useState } from "react";
@@ -15,7 +15,7 @@ const initialState = {
   store: "online",
   url: "",
   address: "",
-  agreementChecked: false,
+  // REMOVED: agreementChecked
 };
 
 const initialError = {
@@ -28,7 +28,7 @@ const initialError = {
   store: "",
   url: "",
   address: "",
-  agreementChecked: "",
+  // REMOVED: agreementChecked
 }
 
 const BusinessWholesaleSignUpComponent = ({ type }) => {
@@ -46,15 +46,6 @@ const BusinessWholesaleSignUpComponent = ({ type }) => {
     }));
 
     setFormErrors({});
-  };
-
-  const handleCheckboxChange = (e) => {
-    setFormData((prevData) => ({
-      ...prevData,
-      agreementChecked: e.target.checked,
-    }));
-
-    setFormErrors(initialError);
   };
 
   const validateForm = (formData) => {
@@ -106,11 +97,7 @@ const BusinessWholesaleSignUpComponent = ({ type }) => {
       return false;
     }
 
-    if (!formData.agreementChecked) {
-      errors.agreementChecked = "Please agree to the privacy policy";
-      setFormErrors(errors);
-      return false;
-    }
+    // REMOVED: Agreement validation
 
     if (formData.store === 'online' && !formData.url.trim()) {
       errors.url = "Please enter your business URL";
@@ -237,20 +224,8 @@ const BusinessWholesaleSignUpComponent = ({ type }) => {
         ) }
 
         <div className="form-footer">
-          <div className="custom-control custom-checkbox">
-            <input
-              type="checkbox"
-              className="custom-control-input"
-              id="register-policy-2"
-              name="agreementChecked"
-              checked={formData.agreementChecked}
-              onChange={handleCheckboxChange}
-            />
-            {/* <label className={`custom-control-label ${formErrors?.agreementChecked ? "text-red-600" : "text-black"}`} htmlFor="register-policy-2">
-              Saya merupakan penjual tembakau elektronik berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan bisnis/komersial*
-            </label> */}
-          </div>
-
+          {/* REMOVED: Entire checkbox section */}
+          
           <button type="button" onClick={handleSubmit} disabled={loading} className="btn btn-outline-primary-2 mt-3">
             <span>{loading ? "Loading" : "Register"}</span>
             <i className="icon-long-arrow-right"></i>

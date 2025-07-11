@@ -1,4 +1,4 @@
-// BusinessOnlineSignUpComponent (paste-6.txt updated)
+// BusinessOnlineSignUpComponent - FIXED WITHOUT AGREEMENT VALIDATION
 "use client";
 
 import { useState } from "react";
@@ -11,7 +11,7 @@ const initialState = {
   password: "",
   confirmPassword: "",
   whatsapp: "",
-  agreementChecked: false,
+  // REMOVED: agreementChecked
 };
 
 const BusinessOnlineSignUpComponent = ({ type }) => {
@@ -32,15 +32,6 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
     setFormData((prevData) => ({
       ...prevData,
       [name]: type === "checkbox" ? checked : value,
-    }));
-
-    setFormErrors({});
-  };
-
-  const handleCheckboxChange = (e) => {
-    setFormData((prevData) => ({
-      ...prevData,
-      agreementChecked: e.target.checked,
     }));
 
     setFormErrors({});
@@ -77,11 +68,7 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
       return false;
     }
 
-    if (!formData.agreementChecked) {
-      errors.agreementChecked = "Please agree to the privacy policy";
-      setFormErrors(errors);
-      return false;
-    }
+    // REMOVED: Agreement validation
 
     return true;
   };
@@ -232,20 +219,8 @@ const BusinessOnlineSignUpComponent = ({ type }) => {
         </div>
 
         <div className="form-footer">
-          <div className="custom-control custom-checkbox">
-            <input
-              type="checkbox"
-              className="custom-control-input"
-              id="register-policy-2"
-              name="agreementChecked"
-              checked={formData.agreementChecked}
-              onChange={handleCheckboxChange}
-            />
-            {/* <label className={`custom-control-label ${formErrors?.agreementChecked ? "text-red-600" : "text-black"}`} htmlFor="register-policy-2">
-              Saya merupakan penjual tembakau elektronik berusia di atas 18 tahun, bertujuan menggunakan produk yang ada di website ini untuk keperluan bisnis/komersial*
-            </label> */}
-          </div>
-
+          {/* REMOVED: Entire checkbox section */}
+          
           <button type="button" onClick={handleSubmit} disabled={loading} className="btn btn-outline-primary-2 mt-3">
             <span>{loading ? "Loading" : "Register"}</span>
             <i className="icon-long-arrow-right"></i>

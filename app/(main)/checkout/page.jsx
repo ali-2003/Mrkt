@@ -77,121 +77,30 @@ function CheckoutPageComponent() {
     }
   }, [items]);
 
-  // UPDATED: Fetch shipping zones via API route
+  // Fetch shipping zones from Sanity
   useEffect(() => {
     const fetchProvinces = async () => {
       try {
-        console.log("🔍 Fetching shipping zones via API route...");
-        console.log("🌐 Current domain:", window.location.hostname);
-        console.log("🌐 Current URL:", window.location.href);
-        
-        const response = await fetch('/api/shipping-zones', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store' // Don't cache the response
-        });
-
-        console.log("📡 API Response status:", response.status);
-        console.log("📡 API Response ok:", response.ok);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("❌ API Response error:", errorText);
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        const data = await response.json();
-        console.log("📦 API Response data:", data);
-
-        if (!data.success) {
-          console.error("❌ API returned error:", data.message);
-          throw new Error(data.message || 'API returned unsuccessful response');
-        }
-
-        if (!data.data || !Array.isArray(data.data)) {
-          console.error("❌ Invalid data format:", data);
-          throw new Error('Invalid data format received from API');
-        }
-
-        console.log("✅ Successfully loaded shipping zones:", data.data.length);
-        setProvinces(data.data);
-
-        if (data.data.length === 0) {
-          toast.warn("Tidak ada zona pengiriman aktif yang tersedia. Silakan hubungi administrator.");
-        } else {
-          console.log("🎉 Shipping zones loaded successfully!");
-        }
-
-      } catch (error) {
-        console.error("❌ Error fetching shipping zones:", error);
-        
-        // Provide specific error messages based on error type
-        if (error.message.includes('404')) {
-          toast.error("API pengiriman tidak ditemukan. Silakan hubungi administrator.");
-        } else if (error.message.includes('500')) {
-          toast.error("Kesalahan server saat memuat data pengiriman. Silakan coba lagi.");
-        } else if (error.message.includes('Failed to fetch')) {
-          toast.error("Tidak dapat terhubung ke server. Periksa koneksi internet Anda.");
-        } else {
-          toast.error(`Gagal memuat informasi pengiriman: ${error.message}`);
-        }
-
-        // Fallback data for critical functionality
-        console.log("🔄 Loading fallback shipping data...");
-        const fallbackProvinces = [
-          {
-            _id: 'jakarta',
-            state: 'DKI Jakarta',
-            stateCode: 'JKT',
-            shippingCost: 15000,
-            estimatedDays: '1-2',
-            isActive: true
-          },
-          {
-            _id: 'jabar',
-            state: 'Jawa Barat',
-            stateCode: 'JABAR',
-            shippingCost: 20000,
-            estimatedDays: '2-3',
-            isActive: true
-          },
-          {
-            _id: 'jateng',
-            state: 'Jawa Tengah',
-            stateCode: 'JATENG',
-            shippingCost: 25000,
-            estimatedDays: '3-4',
-            isActive: true
-          },
-          {
-            _id: 'jatim',
-            state: 'Jawa Timur',
-            stateCode: 'JATIM',
-            shippingCost: 25000,
-            estimatedDays: '3-4',
-            isActive: true
-          },
-          {
-            _id: 'bali',
-            state: 'Bali',
-            stateCode: 'BALI',
-            shippingCost: 30000,
-            estimatedDays: '4-5',
-            isActive: true
+        const provincesData = await client.fetch(`
+          *[_type == 'shippingZone' && isActive == true] | order(state asc) {
+            _id,
+            state,
+            stateCode,
+            shippingCost,
+            estimatedDays
           }
-        ];
-        
-        setProvinces(fallbackProvinces);
-        toast.info("Menggunakan data pengiriman standar. Beberapa provinsi mungkin tidak tersedia.");
+        `);
+        setProvinces(provincesData);
+      } catch (error) {
+        console.error("Error fetching shipping zones:", error);
+        toast.error("Gagal memuat informasi pengiriman");
       }
     };
 
     fetchProvinces();
   }, []);
 
-  // Same discount calculation logic as before...
+  // UPDATED: Same discount calculation logic as cart page (works for guests)
   const calculateCartTotals = async () => {
     if (!items || items.length === 0) return null;
 
@@ -608,17 +517,6 @@ function CheckoutPageComponent() {
       <div className="page-content">
         <div className="checkout">
           <div className="container">
-            {/* Debug info */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="alert alert-warning mb-4">
-                <small>
-                  Debug: Provinces loaded: {provinces.length} | 
-                  Selected: {selectedProvince} | 
-                  Domain: {typeof window !== 'undefined' ? window.location.hostname : 'N/A'}
-                </small>
-              </div>
-            )}
-
             {/* Login suggestion for guests */}
             {!session && (
               <div className="alert alert-info mb-4">

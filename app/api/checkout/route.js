@@ -1,8 +1,8 @@
-// app/api/checkout/route.js - COMPLETE FIXED VERSION WITH GUEST SUPPORT AND IMAGE URL
+// app/api/checkout/route.js - MODIFIED: EMAIL REMOVED, SENT ONLY AFTER PAYMENT
 import { NextResponse } from "next/server";
 import { sanityAdminClient } from "@/sanity/lib/client";
 import { calculateCartTotal } from "@/utils/discountValue";
-import { sendOrderConfirmationEmail } from "@/utils/brevoEmail";
+// REMOVED: import { sendOrderConfirmationEmail } from "@/utils/brevoEmail";
 import { Xendit } from "xendit-node";
 import bcrypt from "bcryptjs";
 
@@ -16,7 +16,6 @@ export async function POST(request) {
   try {
     const body = await request.json();
     
-    // UPDATED: Extract new fields for guest checkout support
     const { 
       items, 
       shippingCost, 
@@ -30,8 +29,7 @@ export async function POST(request) {
       accountData
     } = body;
     
-    // Debug logging
-    console.log("Checkout request received:", {
+    console.log("📦 Checkout request received:", {
       itemCount: items?.length,
       shippingCost,
       discountApplied: !!discount,
@@ -41,23 +39,7 @@ export async function POST(request) {
       hasShippingInfo: !!shippingInfo
     });
     
-    // Debug cart items to see available fields
-    console.log("🔍 DEBUG: Cart items structure:");
-    items?.forEach((item, index) => {
-      console.log(`Item ${index}:`, {
-        name: item.name,
-        id: item.id,
-        imageUrl: item.imageUrl,
-        image: item.image,
-        img: item.img,
-        thumbnail: item.thumbnail,
-        pictures: item.pictures,
-        cartImage: item.cartImage,
-        availableFields: Object.keys(item)
-      });
-    });
-    
-    // UPDATED: Validation for guest checkout
+    // Validation
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
         { success: false, message: "No items in cart" },
@@ -99,7 +81,7 @@ export async function POST(request) {
       );
     }
 
-    // UPDATED: Handle guest account creation
+    // Handle guest account creation
     let finalUser = user;
     let userData = null;
 
@@ -107,7 +89,6 @@ export async function POST(request) {
       try {
         console.log("Creating new user account for guest...");
         
-        // Check if user already exists
         const existingUser = await sanityAdminClient.fetch(
           `*[_type == 'user' && email == $email][0]`,
           { email: userEmail }
@@ -118,10 +99,8 @@ export async function POST(request) {
           userData = existingUser;
           finalUser = { email: existingUser.email, name: existingUser.fullName };
         } else {
-          // Hash password
           const hashedPassword = await bcrypt.hash(accountData.password, 12);
           
-          // Create new user
           const newUserData = {
             _type: 'user',
             fullName: accountData.fullName || shippingInfo.fullName,
@@ -135,16 +114,15 @@ export async function POST(request) {
 
           userData = await sanityAdminClient.create(newUserData);
           finalUser = { email: userData.email, name: userData.fullName };
-          console.log("New user account created:", userData._id);
+          console.log("✅ New user account created:", userData._id);
         }
       } catch (error) {
         console.error("Error creating user account:", error);
-        // Continue as guest if account creation fails
         console.log("Continuing as guest checkout due to account creation error");
       }
     }
 
-    // UPDATED: Fetch user data (for both existing users and guests)
+    // Fetch user data
     if (!userData && !isGuest && user?.email) {
       userData = await sanityAdminClient.fetch(
         `*[_type == 'user' && email == $email][0]{
@@ -154,7 +132,6 @@ export async function POST(request) {
         { email: user.email }
       );
     } else if (!userData && userEmail) {
-      // For guests or new accounts, check if they have any previous orders
       userData = await sanityAdminClient.fetch(
         `*[_type == 'user' && email == $email][0]{
           ...,
@@ -163,7 +140,6 @@ export async function POST(request) {
         { email: userEmail }
       );
       
-      // If no user found, create a minimal userData object for guests
       if (!userData) {
         userData = {
           orderCount: 0,
@@ -174,9 +150,8 @@ export async function POST(request) {
       }
     }
     
-    // Helper function to extract image URL from cart item (now expecting processed URLs from frontend)
+    // Helper function to extract image URL from cart item
     const getCartImageUrl = (cartItem) => {
-      // Try multiple possible image fields from cart (now expecting processed URLs)
       const possibleImages = [
         cartItem.imageUrl,
         cartItem.processedImageUrl,
@@ -203,11 +178,8 @@ export async function POST(request) {
         try {
           console.log(`Fetching SKU and image for product ID: ${cartItem.id}`);
           
-          // First, try to get image from cart data
           const cartImageUrl = getCartImageUrl(cartItem);
-          console.log(`🖼️ Cart image for ${cartItem.name}: ${cartImageUrl ? 'FOUND' : 'NOT_FOUND'}`);
           
-          // Fetch complete product from Sanity using the product ID
           const productFromSanity = await sanityAdminClient.fetch(`
             *[_type == "product" && id == $productId][0] {
               _id,
@@ -235,11 +207,9 @@ export async function POST(request) {
             };
           }
 
-          // Determine the correct SKUs
           let mainSKU = productFromSanity.shippingSku;
           let colorSKU = null;
 
-          // For pod products with color selection
           if (productFromSanity.productType === 'pod' && cartItem.selectedColor && productFromSanity.podColors) {
             const selectedColorData = productFromSanity.podColors.find(color => 
               color.colorName === cartItem.selectedColor.colorName || 
@@ -252,10 +222,9 @@ export async function POST(request) {
             }
           }
 
-          // Use cart image first, then Sanity image as fallback
           const finalImageUrl = cartImageUrl || productFromSanity.imageUrl || null;
           
-          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''} | Image: ${finalImageUrl ? 'YES' : 'NO'} (Source: ${cartImageUrl ? 'CART' : (productFromSanity.imageUrl ? 'SANITY' : 'NONE')})`);
+          console.log(`✅ ${productFromSanity.name}: ${mainSKU || 'MISSING'}${colorSKU ? ` / ${colorSKU}` : ''} | Image: ${finalImageUrl ? 'YES' : 'NO'}`);
 
           return {
             ...cartItem,
@@ -278,11 +247,10 @@ export async function POST(request) {
 
     console.log("🎯 SKU and image fetching complete!");
     
-    // Use provided calculation if available, otherwise recalculate
+    // Calculate cart total
     let cartCalculation = discountCalculation;
     if (!cartCalculation) {
       try {
-        // Validate items before calculating (use enriched items)
         const validItems = enrichedItems.map(item => ({
           ...item,
           qty: item.qty || 1,
@@ -294,7 +262,6 @@ export async function POST(request) {
       } catch (error) {
         console.error("Error calculating cart total:", error);
         
-        // Fallback calculation if there's an error
         const subtotal = enrichedItems.reduce((total, item) => {
           if (item && typeof item.sum === 'number') {
             return total + item.sum;
@@ -313,20 +280,15 @@ export async function POST(request) {
       }
     }
     
-    // Add debug logging for discount values before order creation
-    console.log("💰 DISCOUNT DEBUG BEFORE ORDER CREATION:", {
-      hasOriginalDiscount: !!discount,
+    console.log("💰 Discount calculation:", {
+      hasDiscount: !!discount,
       discountCode: discount?.code,
       discountType: discount?.type,
       cartCalculationDiscount: cartCalculation.discount,
-      cartCalculationDiscountDetails: cartCalculation.discountDetails,
-      cartCalculationOriginal: cartCalculation.original,
-      cartCalculationTotal: cartCalculation.total,
-      isGuest,
-      userEmail
+      discountAmount: cartCalculation.discount
     });
     
-    // UPDATED: Handle discount updates for both users and guests
+    // Handle discount updates
     if (userData && userData._id && ((userData.orderCount === 0 || discount?.type === 'referral') && discount)) {
       try {
         const updatedDiscounts = (userData.discountsAvailable || []).filter(
@@ -339,11 +301,10 @@ export async function POST(request) {
           .commit();
       } catch (err) {
         console.error("Error updating user discounts:", err);
-        // Continue with checkout even if discount update fails
       }
     }
     
-    // Track if a referral was used
+    // Track referral usage
     if (discount?.type === 'referral') {
       try {
         const referral = await sanityAdminClient.fetch(
@@ -367,7 +328,7 @@ export async function POST(request) {
     // Generate order ID
     const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
     
-    // FIXED: Transform cart items with _key for Sanity INCLUDING imageUrl
+    // Transform cart items with _key for Sanity INCLUDING imageUrl
     const transformedProducts = enrichedItems.map((item, index) => {
       const productData = {
         _key: `product-${Date.now()}-${index}`,
@@ -379,7 +340,7 @@ export async function POST(request) {
         price: item.sale_price || item.price,
         totalPrice: item.sum,
         shippingSku: item.shippingSku,
-        imageUrl: item.imageUrl || null, // ADDED: Include imageUrl
+        imageUrl: item.imageUrl || null,
       };
       
       if (item.colorShippingSku) {
@@ -396,13 +357,12 @@ export async function POST(request) {
       return productData;
     });
     
-    // Log the final products with SKUs and images
     console.log("📦 Final products with SKUs and images:");
     transformedProducts.forEach(product => {
       console.log(`   - ${product.name}: ${product.shippingSku}${product.colorShippingSku ? ` / ${product.colorShippingSku}` : ''} | Image: ${product.imageUrl ? 'YES' : 'NO'}`);
     });
     
-    // Prepare shipping info with proper field mapping for Indonesian address format
+    // Prepare shipping info
     const formattedShippingInfo = {
       fullName: shippingInfo.fullName,
       email: shippingInfo.email,
@@ -416,14 +376,14 @@ export async function POST(request) {
       notes: shippingInfo.notes || ""
     };
     
-    // UPDATED: Create the order with proper user handling for guests
+    // Create the order with PENDING status
     const orderData = {
       _type: "order",
       orderId: orderId,
       userId: userData?._id || null,
       email: userEmail,
       name: shippingInfo.fullName,
-      paid: false,
+      paid: false, // ⚠️ CRITICAL: Order starts as UNPAID
       contact: shippingInfo.phone,
       subTotal: cartCalculation.original,
       shippingPrice: shippingCost,
@@ -454,12 +414,12 @@ export async function POST(request) {
         trackingNumber: null
       },
       
-      status: "pending",
-      paymentStatus: "pending",
+      status: "pending", // ⚠️ CRITICAL: Order status is PENDING
+      paymentStatus: "pending", // ⚠️ CRITICAL: Payment is PENDING
       
       // Email status tracking
       emailStatus: {
-        orderConfirmationSent: false,
+        orderConfirmationSent: false, // ⚠️ Email NOT sent yet
         paymentSuccessSent: false,
         shippingNotificationSent: false
       },
@@ -467,115 +427,25 @@ export async function POST(request) {
       createdAt: new Date().toISOString()
     };
     
-    // Add debug logging to see what's happening with discount
-    console.log("💰 DISCOUNT DEBUG AFTER ORDER CREATION:", {
-      hasOriginalDiscount: !!discount,
-      discountCode: discount?.code,
-      cartCalculationDiscount: cartCalculation.discount,
-      cartCalculationDiscountDetails: cartCalculation.discountDetails,
-      finalDiscountObject: orderData.discount,
-      discountAmount: orderData.discount?.amount,
-      isGuest: orderData.isGuest,
-      userEmail: orderData.email
-    });
-    
-    console.log("Order data being saved:", {
+    console.log("💾 Creating order in Sanity with PENDING status:", {
       orderId: orderData.orderId,
+      paymentStatus: orderData.paymentStatus,
+      paid: orderData.paid,
+      emailWillBeSent: "AFTER_PAYMENT_CONFIRMATION",
       productCount: orderData.products.length,
       hasDiscount: !!orderData.discount,
-      discountAmount: orderData.discount?.amount,
-      isGuest: orderData.isGuest,
-      userEmail: orderData.email,
-      shippingInfo: orderData.shippingInfo,
-      productSKUs: orderData.products.map(p => ({ name: p.name, sku: p.shippingSku, colorSku: p.colorShippingSku, hasImage: !!p.imageUrl }))
+      discountAmount: orderData.discount?.amount
     });
     
     // Save order to Sanity
     const orderResult = await sanityAdminClient.create(orderData);
-    console.log("✅ Order saved successfully with SKUs and images:", orderResult._id);
+    console.log("✅ Order saved successfully with PENDING status:", orderResult._id);
     
-    // SEND EMAIL IMMEDIATELY AFTER ORDER CREATION
-    try {
-      console.log("📧 Sending order confirmation email immediately...");
-      
-      // FIXED: Prepare complete order data for email INCLUDING imageUrl
-      const emailOrderData = {
-        ...orderResult,
-        paidAt: new Date().toISOString(),
-        xenditPaymentData: {
-          paymentMethod: 'Xendit Payment Gateway'
-        },
-        products: enrichedItems.map((item, index) => {
-          const productName = item.name + (item.selectedColor?.colorName ? ` - ${item.selectedColor.colorName}` : '');
-          const finalSKU = item.colorShippingSku || item.shippingSku || 'N/A';
-          
-          return {
-            name: productName,
-            category: item.productType || 'Product',
-            skuNo: finalSKU,
-            quantity: item.qty || 1,
-            price: `Rp.${Math.round(item.sum || 0).toLocaleString('id-ID')}`,
-            imageUrl: item.imageUrl || null, // ADDED: Include imageUrl for email
-          };
-        })
-      };
-      
-      console.log("📧 Email order data with images:");
-      emailOrderData.products.forEach((product, index) => {
-        console.log(`   Product ${index + 1}: ${product.name} | Image: ${product.imageUrl ? 'YES' : 'NO'} | SKU: ${product.skuNo}`);
-      });
-      
-      console.log("📧 Email order data:", {
-        orderId: emailOrderData.orderId,
-        email: emailOrderData.email,
-        name: emailOrderData.name,
-        productCount: emailOrderData.products?.length,
-        hasDiscount: !!(cartCalculation?.discount > 0),
-        discountAmount: cartCalculation?.discount || 0,
-        savedDiscountAmount: orderResult.discount?.amount,
-        shippingCost: shippingCost,
-        isGuest: orderResult.isGuest,
-        productsWithImages: emailOrderData.products.map(p => ({ name: p.name, hasImage: !!p.imageUrl, sku: p.skuNo }))
-      });
-      
-      // Send the email
-      const emailResult = await sendOrderConfirmationEmail(emailOrderData);
-      console.log("✅ Order confirmation email sent successfully:", emailResult);
-      
-      // Update email status in the order
-      await sanityAdminClient
-        .patch(orderResult._id)
-        .set({
-          'emailStatus.orderConfirmationSent': true,
-          emailSentAt: new Date().toISOString(),
-          brevoMessageId: emailResult.messageId
-        })
-        .commit();
-        
-      console.log("✅ Email status updated in order");
-      
-    } catch (emailError) {
-      console.error("❌ Failed to send order confirmation email:", emailError);
-      console.error("❌ Email error details:", emailError.message);
-      
-      // Update email status to failed but don't fail the entire checkout
-      try {
-        await sanityAdminClient
-          .patch(orderResult._id)
-          .set({
-            'emailStatus.orderConfirmationSent': false,
-            'emailStatus.errorMessage': emailError.message,
-            emailFailedAt: new Date().toISOString()
-          })
-          .commit();
-      } catch (updateError) {
-        console.error("Failed to update email error status:", updateError);
-      }
-      
-      console.log("⚠️ Continuing with checkout despite email failure");
-    }
+    // ⚠️⚠️⚠️ REMOVED: Email sending logic ⚠️⚠️⚠️
+    // Email will be sent ONLY after payment confirmation via webhook
+    console.log("📧 Email will be sent AFTER payment confirmation via Xendit webhook");
     
-    // Create Xendit Invoice with validation-safe format
+    // Create Xendit Invoice
     try {
       console.log("Creating Xendit invoice for order:", orderResult._id);
       
@@ -600,7 +470,7 @@ export async function POST(request) {
         }
       });
       
-      // Add shipping cost as separate line item if > 0
+      // Add shipping cost
       if (shippingCost > 0) {
         invoiceItems.push({
           name: `Ongkos Kirim - ${formattedShippingInfo.province}`.substring(0, 255),
@@ -615,7 +485,6 @@ export async function POST(request) {
         invoiceDescription += ` (${cartCalculation.discountDetails.name} diterapkan)`;
       }
       
-      // Validate final total
       const validatedFinalTotal = Math.round(parseFloat(finalTotal));
       if (validatedFinalTotal <= 0) {
         throw new Error("Invalid final total amount");
@@ -642,15 +511,11 @@ export async function POST(request) {
         invoiceDuration: 86400, // 24 hours
       };
 
-      console.log("Validated Invoice request:", {
+      console.log("📋 Xendit invoice request:", {
         externalId: invoiceRequest.externalId,
         amount: invoiceRequest.amount,
-        currency: invoiceRequest.currency,
-        payerEmail: invoiceRequest.payerEmail,
         itemsCount: invoiceItems.length,
-        hasShipping: shippingCost > 0,
-        hasDiscount: cartCalculation?.discount > 0,
-        isGuest: orderResult.isGuest
+        hasDiscount: cartCalculation?.discount > 0
       });
 
       const invoice = await Invoice.createInvoice({
@@ -669,7 +534,7 @@ export async function POST(request) {
         })
         .commit();
 
-      // UPDATED: Update user's lifetime spend (only for registered users)
+      // Update user's lifetime spend (only for registered users)
       if (userData && userData._id && !userData.isGuest) {
         try {
           await sanityAdminClient
@@ -689,21 +554,19 @@ export async function POST(request) {
         invoice_url: invoice.invoiceUrl,
         xendit_invoice_id: invoice.id,
         order_number: orderId,
-        email_sent: true,
+        email_sent: false, // ⚠️ Email NOT sent yet
+        email_will_be_sent: "after_payment_confirmation",
         is_guest: orderResult.isGuest,
         debug: {
           skusFetched: transformedProducts.length,
           productSKUs: transformedProducts.map(p => `${p.name}: ${p.shippingSku}`),
           productImages: transformedProducts.map(p => `${p.name}: ${p.imageUrl ? 'HAS_IMAGE' : 'NO_IMAGE'}`),
-          emailAttempted: true,
           invoiceItemsCount: invoiceItems.length,
-          hasShipping: shippingCost > 0,
           hasDiscount: cartCalculation?.discount > 0,
           discountAmount: orderResult.discount?.amount,
           finalTotal: validatedFinalTotal,
-          isGuest: orderResult.isGuest,
-          userEmail: orderResult.email,
-          accountCreated: createAccount && !isGuest
+          paymentStatus: "pending",
+          emailStatus: "will_be_sent_after_payment"
         }
       });
 
@@ -711,13 +574,8 @@ export async function POST(request) {
       console.error("❌ Xendit error details:", {
         message: xenditError.message,
         status: xenditError.status,
-        errorCode: xenditError.errorCode,
-        response: xenditError.response
+        errorCode: xenditError.errorCode
       });
-      
-      if (xenditError.response?.errors) {
-        console.error("❌ Xendit validation errors:", xenditError.response.errors);
-      }
       
       // Update order status to failed
       await sanityAdminClient
@@ -734,8 +592,7 @@ export async function POST(request) {
         { 
           success: false, 
           message: "Payment processing failed. Please try again or contact support.",
-          error: xenditError.errorCode || "PAYMENT_ERROR",
-          details: xenditError.response?.errors || []
+          error: xenditError.errorCode || "PAYMENT_ERROR"
         },
         { status: 500 }
       );

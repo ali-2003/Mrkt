@@ -188,7 +188,7 @@ function HomePageComponent({
                   </div>
                   <div className="banner-content content-bottom">
                     <Link
-                      href="https://www.tokopedia.com/agpremiumvapor"
+                      href="https://www.tokopedia.com/mrkt-lab-id/product"
                       className="btn btn-link btn-link-primary"
                     >
                       BELANJA SEKARANG<i className="icon-angle-right"></i>

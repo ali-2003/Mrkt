@@ -576,7 +576,7 @@ const handleSubmit = async (e) => {
 
                   <div className="row">
                     <div className="col-sm-6">
-                      <label>Nomor Telepon *</label>
+                      <label>Nomor Telepon </label>
                       <input
                         type="tel"
                         name="phone"
@@ -584,7 +584,7 @@ const handleSubmit = async (e) => {
                         value={formData.phone}
                         onChange={handleInputChange}
                         placeholder="(+62) xxx-xxxx-xxxx"
-                        required
+                        // required
                       />
                     </div>
                     

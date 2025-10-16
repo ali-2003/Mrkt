@@ -1,4 +1,4 @@
-// app/checkout/page.js
+// app/checkout/page.js - UPDATED WITH RETRY LOGIC
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -18,8 +18,10 @@ function CheckoutPageComponent() {
   const [shippingCost, setShippingCost] = useState(0);
   const [cartCalculation, setCartCalculation] = useState(null);
   const [createAccount, setCreateAccount] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [lastError, setLastError] = useState(null);
   
-  // Form data - Updated for guest checkout
+  // Form data
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -31,7 +33,6 @@ function CheckoutPageComponent() {
     province: "",
     country: "Indonesia",
     notes: "",
-    // Additional fields for account creation
     password: "",
     confirmPassword: ""
   });
@@ -40,11 +41,12 @@ function CheckoutPageComponent() {
   const dispatch = useDispatch();
   const { data: session } = useSession();
   
-  // Get cart data from Redux
   const cart = useSelector((state) => state.cart);
   const { items, discount } = cart;
 
-  // Redirect if cart is empty
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY = 1500; // 1.5 seconds
+
   useEffect(() => {
     if (!items || items.length === 0) {
       router.push("/keranjang");
@@ -52,7 +54,6 @@ function CheckoutPageComponent() {
     }
   }, [items, router]);
 
-  // Pre-fill form with session data if user is logged in
   useEffect(() => {
     if (session?.user) {
       setFormData(prev => ({
@@ -63,21 +64,18 @@ function CheckoutPageComponent() {
     }
   }, [session]);
 
-  // ABANDONMENT EMAIL TRACKING - Capture email when user types it
   useEffect(() => {
     if (formData.email && formData.email.includes('@')) {
       window.abandonmentSystem?.setUserEmail(formData.email);
     }
   }, [formData.email]);
 
-  // ABANDONMENT EMAIL TRACKING - Track cart status from Redux
   useEffect(() => {
     if (window.abandonmentSystem && items) {
       window.abandonmentSystem.updateCartStatus(items.length > 0);
     }
   }, [items]);
 
-  // Fetch shipping zones from Sanity
   useEffect(() => {
     const fetchProvinces = async () => {
       try {
@@ -100,12 +98,10 @@ function CheckoutPageComponent() {
     fetchProvinces();
   }, []);
 
-  // UPDATED: Same discount calculation logic as cart page (works for guests)
   const calculateCartTotals = async () => {
     if (!items || items.length === 0) return null;
 
     try {
-      // Get user data for first order discount calculation (only for logged-in users)
       const getUserData = async () => {
         if (!session?.user?.email) return { orderCount: 0, lifetimeSpend: 0 };
         try {
@@ -124,7 +120,6 @@ function CheckoutPageComponent() {
         }
       };
 
-      // Ensure all items have necessary properties
       const validItems = items.map(item => ({
         ...item,
         qty: item.qty || 1,
@@ -132,10 +127,8 @@ function CheckoutPageComponent() {
         productType: item.productType
       }));
 
-      // Calculate base subtotal
       const subtotal = validItems.reduce((total, item) => total + item.sum, 0);
 
-      // If there's a manual discount applied, use it
       if (discount && discount.percentage) {
         const discountAmount = subtotal * (discount.percentage / 100);
         return {
@@ -151,10 +144,8 @@ function CheckoutPageComponent() {
         };
       }
 
-      // Otherwise check for automatic discounts
       const userDataObj = await getUserData();
       
-      // Helper functions
       const countProductTypes = (items, productType) => {
         return items.filter(item => item?.productType === productType)
           .reduce((count, item) => count + (item.qty || 1), 0);
@@ -166,7 +157,6 @@ function CheckoutPageComponent() {
           .reduce((total, item) => total + (item.sum || 0), 0);
       };
       
-      // Allow discounts for non-business users (including guests)
       const isEligibleForDiscounts = () => {
         return !session?.user?.accountType || session?.user?.accountType !== 'business';
       };
@@ -177,7 +167,6 @@ function CheckoutPageComponent() {
 
       let bestDiscount = { amount: 0, details: null };
 
-      // Check for first order discount (ONLY for logged in users with no previous orders)
       if (session?.user && userDataObj?.orderCount === 0) {
         const discountAmount = subtotal * 0.2;
         if (discountAmount > bestDiscount.amount) {
@@ -193,7 +182,6 @@ function CheckoutPageComponent() {
         }
       }
 
-      // Bundle and volume discounts available for all non-business users (including guests)
       if (isEligibleForDiscounts()) {
         if (hasPodDevice && bottleCount >= 3) {
           const discountAmount = bottleTotal * 0.5;
@@ -250,7 +238,6 @@ function CheckoutPageComponent() {
         }
       }
 
-      // Apply the best discount if any
       if (bestDiscount.amount > 0 && bestDiscount.details) {
         return {
           original: subtotal,
@@ -260,7 +247,6 @@ function CheckoutPageComponent() {
         };
       }
 
-      // No discounts apply
       return {
         original: subtotal,
         discount: 0,
@@ -280,7 +266,6 @@ function CheckoutPageComponent() {
     }
   };
 
-  // Calculate cart totals on component mount and when dependencies change
   useEffect(() => {
     if (items?.length > 0) {
       calculateCartTotals().then(calculation => {
@@ -289,7 +274,6 @@ function CheckoutPageComponent() {
     }
   }, [items, session?.user, discount]);
 
-  // Handle province selection and update shipping cost
   const handleProvinceChange = (e) => {
     const provinceId = e.target.value;
     setSelectedProvince(provinceId);
@@ -310,7 +294,6 @@ function CheckoutPageComponent() {
     }
   };
 
-  // Handle form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -319,7 +302,6 @@ function CheckoutPageComponent() {
     }));
   };
 
-  // Validate form
   const validateForm = () => {
     const required = ['fullName', 'email', 'phone', 'streetAddress', 'district', 'city', 'postalCode', 'province'];
     const fieldNames = {
@@ -345,14 +327,12 @@ function CheckoutPageComponent() {
       return false;
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
       toast.error("Format email tidak valid");
       return false;
     }
 
-    // If user wants to create account, validate password fields
     if (createAccount && !session) {
       if (!formData.password || formData.password.length < 6) {
         toast.error("Password minimal 6 karakter");
@@ -367,136 +347,143 @@ function CheckoutPageComponent() {
     return true;
   };
 
-// UPDATED: Handle form submission - ADD IMAGE PROCESSING
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  
-  if (!validateForm()) return;
-  
-  setLoading(true);
-  
-  try {
-    const shippingInfo = {
-      fullName: formData.fullName,
-      email: formData.email,
-      phone: formData.phone,
-      streetAddress: formData.streetAddress,
-      district: formData.district,
-      city: formData.city,
-      postalCode: formData.postalCode,
-      province: formData.province,
-      country: formData.country,
-      notes: formData.notes
-    };
+  // ADDED: Sleep utility for retry delays
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // FIXED: Process image URLs using the same logic as the checkout display
-    const itemsWithImageUrls = items.map(item => ({
-      ...item,
-      imageUrl: getCartImage(item) // Add processed image URL
-    }));
+  // UPDATED: Handle form submission with RETRY LOGIC
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!validateForm()) return;
+    
+    setLoading(true);
+    setLastError(null);
+    
+    try {
+      const shippingInfo = {
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        streetAddress: formData.streetAddress,
+        district: formData.district,
+        city: formData.city,
+        postalCode: formData.postalCode,
+        province: formData.province,
+        country: formData.country,
+        notes: formData.notes
+      };
 
-    // Prepare checkout data in the format the API expects
-    const checkoutData = {
-      items: itemsWithImageUrls, // Use items with processed image URLs
-      shippingCost: shippingCost || 0,
-      discount: discount || null,
-      discountCalculation: cartCalculation,
-      user: session?.user || null,
-      shippingInfo,
-      // Additional flags
-      isGuest: !session?.user,
-      userEmail: session?.user?.email || formData.email,
-      // Include account creation data if guest wants to create account
-      ...(createAccount && !session && {
-        createAccount: true,
-        accountData: {
-          email: formData.email,
-          password: formData.password,
-          fullName: formData.fullName,
-          phone: formData.phone
+      const itemsWithImageUrls = items.map(item => ({
+        ...item,
+        imageUrl: getCartImage(item)
+      }));
+
+      const checkoutData = {
+        items: itemsWithImageUrls,
+        shippingCost: shippingCost || 0,
+        discount: discount || null,
+        discountCalculation: cartCalculation,
+        user: session?.user || null,
+        shippingInfo,
+        isGuest: !session?.user,
+        userEmail: session?.user?.email || formData.email,
+        ...(createAccount && !session && {
+          createAccount: true,
+          accountData: {
+            email: formData.email,
+            password: formData.password,
+            fullName: formData.fullName,
+            phone: formData.phone
+          }
+        })
+      };
+
+      // ADDED: Retry logic
+      let lastAttemptError = null;
+      let response = null;
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          console.log(`Checkout attempt ${attempt + 1}/${MAX_RETRIES + 1}...`);
+          
+          response = await fetch("/api/checkout", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(checkoutData),
+          });
+
+          if (response.ok) {
+            console.log("Checkout successful!");
+            break; // Success, exit retry loop
+          }
+
+          if (attempt < MAX_RETRIES) {
+            console.log(`Attempt ${attempt + 1} failed, retrying in ${RETRY_DELAY}ms...`);
+            await sleep(RETRY_DELAY);
+            continue;
+          }
+
+          lastAttemptError = `API returned ${response.status}`;
+        } catch (fetchError) {
+          lastAttemptError = fetchError.message;
+          
+          if (attempt < MAX_RETRIES) {
+            console.log(`Network error on attempt ${attempt + 1}, retrying in ${RETRY_DELAY}ms...`);
+            await sleep(RETRY_DELAY);
+            continue;
+          }
         }
-      })
-    };
-
-    console.log("Sending checkout data:", {
-      itemCount: checkoutData.items?.length,
-      hasDiscount: !!checkoutData.discount,
-      isGuest: checkoutData.isGuest,
-      userEmail: checkoutData.userEmail,
-      shippingCost: checkoutData.shippingCost,
-      // Debug image info
-      itemsWithImages: checkoutData.items.map(item => ({
-        name: item.name,
-        hasImageUrl: !!item.imageUrl,
-        imageUrl: item.imageUrl
-      }))
-    });
-
-    const response = await fetch("/api/checkout", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(checkoutData),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Checkout API Error:", errorText);
-      throw new Error(`Checkout gagal: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log("Checkout response:", data);
-
-    if (!data.success) {
-      throw new Error(data.message || "Checkout gagal");
-    }
-
-    if (!data.invoice_url) {
-      throw new Error("Invoice URL tidak ditemukan dalam respons");
-    }
-
-    // ABANDONMENT EMAIL TRACKING - Mark purchase complete to prevent abandonment emails
-    if (window.abandonmentSystem) {
-      window.abandonmentSystem.markPurchaseComplete();
-    }
-
-    // Clear cart
-    dispatch(emptyCart());
-    
-    // Show success message
-    toast.success("Pesanan berhasil dibuat! Mengalihkan ke halaman pembayaran...");
-
-    // Wait a moment for the toast to show, then redirect
-    setTimeout(() => {
-      try {
-        // Force redirect to Xendit payment page
-        window.location.replace(data.invoice_url);
-      } catch (redirectError) {
-        console.error("Redirect error:", redirectError);
-        // Fallback: try regular href assignment
-        window.location.href = data.invoice_url;
       }
-    }, 1000);
 
-  } catch (error) {
-    console.error("Checkout error:", error);
-    
-    // Show specific error message
-    if (error.message.includes("400")) {
-      toast.error("Data checkout tidak valid. Harap periksa kembali form Anda.");
-    } else if (error.message.includes("500")) {
-      toast.error("Terjadi kesalahan server. Silakan coba lagi.");
-    } else {
+      // If all retries failed
+      if (!response?.ok) {
+        throw new Error(`Checkout gagal setelah ${MAX_RETRIES + 1} percobaan: ${lastAttemptError}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || "Checkout gagal");
+      }
+
+      if (!data.invoice_url) {
+        throw new Error("Invoice URL tidak ditemukan dalam respons");
+      }
+
+      if (window.abandonmentSystem) {
+        window.abandonmentSystem.markPurchaseComplete();
+      }
+
+      dispatch(emptyCart());
+      toast.success("Pesanan berhasil dibuat! Mengalihkan ke halaman pembayaran...");
+
+      setTimeout(() => {
+        try {
+          window.location.replace(data.invoice_url);
+        } catch (redirectError) {
+          console.error("Redirect error:", redirectError);
+          window.location.href = data.invoice_url;
+        }
+      }, 1000);
+
+    } catch (error) {
+      console.error("Checkout error:", error);
+      setLastError(error.message);
+      
+      // Show user-friendly error with option to retry
       toast.error(error.message || "Terjadi kesalahan saat checkout");
+      
+      if (retryCount < MAX_RETRIES) {
+        toast.info(`Anda dapat mencoba kembali. Percobaan tersisa: ${MAX_RETRIES - retryCount}`);
+        setRetryCount(retryCount + 1);
+      }
+    } finally {
+      setLoading(false);
     }
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
-  // Format price
   const formatPrice = (price) => {
     return price.toLocaleString('id-ID', {
       minimumFractionDigits: 0,
@@ -504,7 +491,6 @@ const handleSubmit = async (e) => {
     });
   };
 
-  // Get cart image
   const getCartImage = (item) => {
     if (item.cartImage) {
       return urlFor(item.cartImage).url();
@@ -516,7 +502,6 @@ const handleSubmit = async (e) => {
     return '/placeholder-image.jpg';
   };
 
-  // Calculate final totals
   const subtotalAfterDiscount = cartCalculation?.total || (items?.reduce((total, item) => total + (item.sum || 0), 0) || 0);
   const finalTotal = subtotalAfterDiscount + shippingCost;
 
@@ -529,7 +514,6 @@ const handleSubmit = async (e) => {
       <div className="page-content">
         <div className="checkout">
           <div className="container">
-            {/* Login suggestion for guests */}
             {!session && (
               <div className="alert alert-info mb-4">
                 <div className="d-flex justify-content-between align-items-center">
@@ -541,9 +525,17 @@ const handleSubmit = async (e) => {
               </div>
             )}
 
+            {/* ADDED: Error message display */}
+            {lastError && (
+              <div className="alert alert-warning mb-4">
+                <strong>Peringatan:</strong> {lastError}
+                <br />
+                <small>Coba lagi dengan mengklik tombol di bawah. Biasanya berhasil pada percobaan kedua.</small>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit}>
               <div className="row">
-                {/* Shipping Information */}
                 <div className="col-lg-7">
                   <h2 className="checkout-title">Informasi Pengiriman</h2>
                   
@@ -569,7 +561,7 @@ const handleSubmit = async (e) => {
                         value={formData.email}
                         onChange={handleInputChange}
                         required
-                        disabled={!!session?.user?.email} // Disable if user is logged in
+                        disabled={!!session?.user?.email}
                       />
                     </div>
                   </div>
@@ -584,7 +576,6 @@ const handleSubmit = async (e) => {
                         value={formData.phone}
                         onChange={handleInputChange}
                         placeholder="(+62) xxx-xxxx-xxxx"
-                        // required
                       />
                     </div>
                     
@@ -674,7 +665,6 @@ const handleSubmit = async (e) => {
                     placeholder="Catatan khusus untuk pesanan Anda, misalnya instruksi pengiriman khusus."
                   ></textarea>
 
-                  {/* Account creation option for guests */}
                   {!session && (
                     <div className="mt-4">
                       <div className="custom-control custom-checkbox">
@@ -722,12 +712,10 @@ const handleSubmit = async (e) => {
                   )}
                 </div>
 
-                {/* Order Summary */}
                 <div className="col-lg-5">
                   <div className="order-summary">
                     <h3>Pesanan Anda</h3>
 
-                    {/* Order Items */}
                     <table className="table table-mini-cart">
                       <thead>
                         <tr>
@@ -775,7 +763,6 @@ const handleSubmit = async (e) => {
                           </td>
                         </tr>
 
-                        {/* Show discount from cart calculation if exists */}
                         {cartCalculation?.discount > 0 && cartCalculation?.discountDetails && (
                           <tr className="cart-discount">
                             <td>
@@ -844,7 +831,7 @@ const handleSubmit = async (e) => {
                       className="btn btn-outline-primary-2 btn-order btn-block"
                       disabled={loading || !selectedProvince}
                     >
-                      {loading ? 'Memproses...' : 'LANJUT KE PEMBAYARAN'}
+                      {loading ? `Memproses...${retryCount > 0 ? ` (Percobaan ${retryCount + 1})` : ''}` : 'LANJUT KE PEMBAYARAN'}
                     </button>
                   </div>
                 </div>

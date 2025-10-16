@@ -8,6 +8,30 @@ import PageHeader from "@/components/features/page-header";
 import ShopListOne from "@/components/partials/shop/list/shop-list-one";
 import Pagination from "@/components/features/pagination";
 
+// ADDED: Data normalization function to handle missing/invalid fields
+function normalizeProduct(product) {
+  if (!product || typeof product !== 'object') {
+    return null;
+  }
+
+  return {
+    // Required fields with defaults
+    _id: product?._id || `product-${Math.random()}`,
+    name: product?.name || "Unnamed Product",
+    price: typeof product?.price === 'number' ? product.price : 0,
+    
+    // Optional fields with safe defaults
+    ratings: typeof product?.ratings === 'number' ? Math.max(0, Math.min(5, product.ratings)) : 0,
+    _createdAt: product?._createdAt || new Date().toISOString(),
+    image: product?.image || "/placeholder-image.jpg",
+    description: product?.description || "No description available",
+    stock: typeof product?.stock === 'number' ? product.stock : 0,
+    
+    // Preserve any other custom fields
+    ...product,
+  };
+}
+
 function CategoryPageComponent({ products: data }) {
   const [toggle, setToggle] = useState(false);
   
@@ -19,22 +43,24 @@ function CategoryPageComponent({ products: data }) {
   const loading = false;
   const perPage = 6;
 
-  // FIXED: Use useMemo for sorted products to avoid mutations
+  // IMPROVED: Normalize all products and handle invalid data
   const products = useMemo(() => {
     if (!data || !Array.isArray(data)) {
       console.warn('Invalid products data:', data);
       return [];
     }
 
-    // Create a copy of the array to avoid mutation
-    const productsCopy = [...data];
+    // Normalize all products to ensure required fields exist
+    const normalizedProducts = data
+      .map(product => normalizeProduct(product))
+      .filter(product => product !== null); // Remove any null results
 
     if (!sortBy || sortBy === "default") {
-      return productsCopy;
+      return normalizedProducts;
     }
 
     if (sortBy === "rating") {
-      return productsCopy.sort((a, b) => {
+      return [...normalizedProducts].sort((a, b) => {
         const ratingA = a?.ratings || 0;
         const ratingB = b?.ratings || 0;
         return ratingB - ratingA;
@@ -42,14 +68,14 @@ function CategoryPageComponent({ products: data }) {
     }
 
     if (sortBy === "new") {
-      return productsCopy.sort((a, b) => {
+      return [...normalizedProducts].sort((a, b) => {
         const dateA = a?._createdAt ? new Date(a._createdAt) : new Date(0);
         const dateB = b?._createdAt ? new Date(b._createdAt) : new Date(0);
         return dateB - dateA;
       });
     }
 
-    return productsCopy;
+    return normalizedProducts;
   }, [data, sortBy]);
 
   const totalCount = products?.length || 0;
@@ -62,7 +88,6 @@ function CategoryPageComponent({ products: data }) {
     };
   }, []);
 
-  // FIXED: Improved resize handler
   function resizeHandle() {
     if (typeof window !== 'undefined' && document?.querySelector("body")) {
       if (document.querySelector("body").offsetWidth < 992) {
@@ -73,7 +98,6 @@ function CategoryPageComponent({ products: data }) {
     }
   }
 
-  // FIXED: Improved sort handler with error handling
   function onSortByChange(e) {
     try {
       const query = e.target.value;
@@ -90,7 +114,7 @@ function CategoryPageComponent({ products: data }) {
     }
   }
 
-  // FIXED: Add error boundary for invalid data
+  // Show error state if data is invalid
   if (!data) {
     return (
       <main className="main shop">

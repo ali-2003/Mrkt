@@ -7,6 +7,8 @@ export default function OrdersListPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState(null);
 
   useEffect(() => {
     fetchOrders();
@@ -27,6 +29,44 @@ export default function OrdersListPage() {
       console.error('Error fetching orders:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ADDED: Reconcile payments
+  const handleReconcile = async () => {
+    if (reconciling) return;
+    
+    const confirmed = window.confirm(
+      'Check Xendit for paid orders and send confirmation emails?\n\nThis will check all pending orders from the last month.'
+    );
+    if (!confirmed) return;
+
+    try {
+      setReconciling(true);
+      setReconcileResult(null);
+
+      const response = await fetch('/api/admin/reconcile-payments', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reconcile payments');
+      }
+
+      const data = await response.json();
+      setReconcileResult(data);
+
+      // Refresh orders after reconciliation
+      setTimeout(() => {
+        fetchOrders();
+      }, 1000);
+
+      console.log('Reconciliation result:', data);
+    } catch (error) {
+      console.error('Error reconciling payments:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -53,24 +93,52 @@ export default function OrdersListPage() {
           <div className="flex justify-between items-center">
             <p className="text-gray-600">Manage and fulfill orders</p>
             <div className="flex gap-3">
-            <button
-  onClick={fetchOrders}
-  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
->
-  Refresh
-</button>
+              <button
+                onClick={fetchOrders}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Refresh
+              </button>
 
-<Link
-  href="https://mrkt.sanity.studio/"
-  target="_blank"
-  rel="noopener noreferrer"
-  className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300"
->
-  Open Studio
-</Link>
+              {/* ADDED: Reconcile button */}
+              <button
+                onClick={handleReconcile}
+                disabled={reconciling}
+                className={`px-6 py-2 rounded-lg text-white font-semibold ${
+                  reconciling
+                    ? 'bg-orange-400 cursor-not-allowed'
+                    : 'bg-orange-600 hover:bg-orange-700'
+                }`}
+              >
+                {reconciling ? 'Checking...' : 'Check for Paid Orders'}
+              </button>
+
+              <Link
+                href="https://mrkt.sanity.studio/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300"
+              >
+                Open Studio
+              </Link>
             </div>
           </div>
         </div>
+
+        {/* ADDED: Reconcile result message */}
+        {reconcileResult && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+            <h3 className="text-green-800 font-semibold mb-2">Reconciliation Complete</h3>
+            <div className="text-green-700 text-sm space-y-1">
+              <p>Orders checked: {reconcileResult.stats.totalOrdersChecked}</p>
+              <p>Paid orders found: {reconcileResult.stats.paidOrdersFound}</p>
+              <p>Emails sent: {reconcileResult.stats.emailsSent}</p>
+              {reconcileResult.stats.errors && reconcileResult.stats.errors.length > 0 && (
+                <p className="text-red-600 mt-2">Errors: {reconcileResult.stats.errors.length}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-lg shadow-md mb-6">
           <div className="flex border-b">

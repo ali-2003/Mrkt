@@ -1,4 +1,4 @@
-// app/checkout/page.js - UPDATED WITH RETRY LOGIC
+// app/checkout/page.js - UPDATED WITH RETRY LOGIC & OPTIONAL PHONE/EMAIL
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -303,11 +303,10 @@ function CheckoutPageComponent() {
   };
 
   const validateForm = () => {
-    const required = ['fullName', 'email', 'phone', 'streetAddress', 'district', 'city', 'postalCode', 'province'];
+    // UPDATED: Removed 'email' and 'phone' from required fields
+    const required = ['fullName', 'streetAddress', 'district', 'city', 'postalCode', 'province'];
     const fieldNames = {
       fullName: 'Nama Lengkap',
-      email: 'Email',
-      phone: 'Nomor Telepon',
       streetAddress: 'Alamat Jalan',
       district: 'Kecamatan',
       city: 'Kota',
@@ -327,10 +326,13 @@ function CheckoutPageComponent() {
       return false;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      toast.error("Format email tidak valid");
-      return false;
+    // UPDATED: Only validate email format if it's provided
+    if (formData.email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email)) {
+        toast.error("Format email tidak valid");
+        return false;
+      }
     }
 
     if (createAccount && !session) {
@@ -350,7 +352,7 @@ function CheckoutPageComponent() {
   // ADDED: Sleep utility for retry delays
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // UPDATED: Handle form submission with RETRY LOGIC
+  // UPDATED: Handle form submission with RETRY LOGIC & PLACEHOLDERS
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -360,10 +362,11 @@ function CheckoutPageComponent() {
     setLastError(null);
     
     try {
+      // UPDATED: Add placeholder values if email/phone not provided
       const shippingInfo = {
         fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone,
+        email: formData.email || "tidak-diisi@placeholder.com",
+        phone: formData.phone || "Tidak diisi",
         streetAddress: formData.streetAddress,
         district: formData.district,
         city: formData.city,
@@ -393,7 +396,7 @@ function CheckoutPageComponent() {
             email: formData.email,
             password: formData.password,
             fullName: formData.fullName,
-            phone: formData.phone
+            phone: formData.phone || "Tidak diisi"
           }
         })
       };
@@ -553,14 +556,13 @@ function CheckoutPageComponent() {
                     </div>
                     
                     <div className="col-sm-6">
-                      <label>Email *</label>
+                      <label>Email</label>
                       <input
                         type="email"
                         name="email"
                         className="form-control"
                         value={formData.email}
                         onChange={handleInputChange}
-                        required
                         disabled={!!session?.user?.email}
                       />
                     </div>
@@ -568,7 +570,7 @@ function CheckoutPageComponent() {
 
                   <div className="row">
                     <div className="col-sm-6">
-                      <label>Nomor Telepon </label>
+                      <label>Nomor Telepon</label>
                       <input
                         type="tel"
                         name="phone"

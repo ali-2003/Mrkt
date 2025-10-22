@@ -150,7 +150,7 @@ function Footer() {
             <div className="col-sm-12 col-lg-6 col-xl-2-5col">
               <div className="widget widget-about">
                 <Image
-                  src="/images/home/header-logo-t.png"
+                  src="/images/home/header-logo-t-3.jpeg"
                   className="footer-logo my-2 !w-[130px]"
                   alt="Footer Logo"
                   width={100}
@@ -221,6 +221,12 @@ function Footer() {
                   </li>
                   <li>
                     <Link href="/kebijakan-privasi">Kebijakan Privasi</Link>
+                  </li>
+                  <li>
+                    <Link href="/refundPolicy">Kebijakan Pengembalian Barang</Link>
+                  </li>
+                  <li>
+                    <Link href="/warrantyPolicy">Kebijakan Garansi</Link>
                   </li>
                 </ul>
               </div>

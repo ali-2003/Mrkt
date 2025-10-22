@@ -271,7 +271,7 @@ function Header() {
                 <div className="header-left">
                   <Link href="/" className="logo">
                     <Image
-                      src="/images/home/header-logo-t-2.png"
+                      src="/images/home/header-logo-t-3.jpeg"
                       className="w-[80px]"
                       alt="Molla Logo"
                       width={100}

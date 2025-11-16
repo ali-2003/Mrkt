@@ -421,6 +421,7 @@ export async function POST(request) {
         successRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/success?order_id=${orderResult._id}`,
         failureRedirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/payment/failed?order_id=${orderResult._id}`,
         items: invoiceItems,
+        paymentMethods: ["CARD", "BANK_TRANSFER", "EWALLET"],
         customerNotificationPreference: {
           invoiceCreated: ["email"],
           invoicePaid: ["email"],
